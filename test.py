@@ -1,7 +1,7 @@
 import cv2 
 import math
 points = []
-img = cv2.imread(r"D:\DaiHoc\Intern\ThienPhuocCompany\data_fishNet\40cm\WIN_20250215_08_40_15_Pro.jpg")
+img = cv2.imread(r"D:\DaiHoc\Intern\ThienPhuocCompany\data_fishNet\luoiMoi2\WIN_20250303_10_57_32_Pro.jpg")
 def mouse_event(event, x, y, flags, param):
     global img, points
 

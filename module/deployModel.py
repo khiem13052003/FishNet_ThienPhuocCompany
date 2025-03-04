@@ -1,38 +1,62 @@
 import cv2
 import numpy as np
 import os
-from collections import defaultdict
 import random
 import math
+import matplotlib.pyplot as plt
 
 class ImageProcessor:
     def __init__(self,
-                 roi_coords: tuple = (0, 1920, 700, 1000),
+                 extract_roi_size: tuple[int, int, int, int] = (200, 1700, 200, 620),
                  distance_2node: float = 1.4,
-                 detect_corners_block_size: int = 5,  # càng giảm càng nhỏ
-                 detect_corners_ksize: int = 3,         # càng giảm vùng càng ngắn
-                 detect_corners_k: float = 0.1,         # càng giảm vùng càng lớn
-                 detect_corners_threshold_ratio: float = 0.07,
-                 detect_corners_dilated_ksize: tuple = (3,3),
-                 detect_corners_closed_ksize: tuple = (3,3),
-                 gen_centers_min_area: float = 70.0,
-                 group_points_by_y_threshold: float = 4.0,
-                 check_error_expected_x_distance: float = 32.0, check_error_allowed_x_error: float = 3.0,
-                 check_error_expected_angle: float = 0.0, check_error_allowed_angle_error: float = 8.0,
-                 check_error_expected_y_distance: float = 30.0, check_error_allowed_y_error: float = 8.0):
+                 extract_maskNet_GaussianKernelSize: tuple = (11,11),
+                 extract_maskNet_addWeighted: tuple=(7,-6),
+                 extract_maskNet_CLAHE: tuple=(7,(60,40)),
+                 extract_maskNet_threshold: float = 190,
+                 detect_node_erode: tuple=((5,3), 1), 
+                 detect_node_opened: tuple=(2,2),
+                 detect_node_dilated: tuple=((3,3), 4),
+                 gen_centers_min_area: float = 50.0,
+                 group_points_by_y_threshold: float = 4,
+                 filter_rows_threshold: float=0.5,
+                 check_error_expected_x_distance: float = 20.0, check_error_allowed_x_error: float = 5.0,
+                 check_error_expected_angle: float = 0.0, check_error_allowed_angle_error: float = 10.0,
+                 check_error_expected_y_distance: float = 80.0, check_error_allowed_y_error: float = 8.0):
         """
-        Khởi tạo các tham số cho xử lý ảnh.
+        Khởi tạo các tham số cấu hình cho quá trình xử lý ảnh.
+
+        Parameters:
+            extract_roi_size (tuple): Kích thước vùng ROI theo định dạng (x_start, x_end, y_start, y_end).
+            distance_2node (float): Khoảng cách dự kiến giữa các nút.
+            extract_maskNet_GaussianKernelSize (tuple): Kích thước kernel cho Gaussian blur.
+            extract_maskNet_addWeighted (tuple): Hệ số cho phép cộng trọng số để tăng cường độ sắc nét (alpha, beta).
+            extract_maskNet_CLAHE (tuple): Thông số cho CLAHE gồm (clipLimit, (tileGridSize_x, tileGridSize_y)).
+            extract_maskNet_threshold (float): Ngưỡng để chuyển ảnh sang nhị phân.
+            detect_node_erode (tuple): Thông số cho phép xói mòn, gồm (kernel size, iterations).
+            detect_node_opened (tuple): Kích thước kernel cho phép mở (morphological opening).
+            detect_node_dilated (tuple): Thông số cho phép giãn nở, gồm (kernel size, iterations).
+            gen_centers_min_area (float): Diện tích tối thiểu để xem một đối tượng là nút hợp lệ.
+            group_points_by_y_threshold (float): Ngưỡng cho phép sai lệch theo trục y để nhóm các điểm.
+            filter_rows_threshold (float): Tỉ lệ phần trăm số nút tối thiểu (so với trung bình) để duy trì hàng.
+            check_error_expected_x_distance (float): Khoảng cách ngang dự kiến giữa các nút.
+            check_error_allowed_x_error (float): Sai số cho phép đối với khoảng cách ngang.
+            check_error_expected_angle (float): Góc dự kiến giữa các nút khi nối với nhau.
+            check_error_allowed_angle_error (float): Sai số cho phép đối với góc.
+            check_error_expected_y_distance (float): Khoảng cách dọc dự kiến giữa các hàng nút.
+            check_error_allowed_y_error (float): Sai số cho phép đối với khoảng cách dọc.
         """
-        self.roi_coords = roi_coords
+        self.extract_roi_size = extract_roi_size
         self.distance_2node = distance_2node
-        self.detect_corners_block_size = detect_corners_block_size
-        self.detect_corners_ksize = detect_corners_ksize
-        self.detect_corners_k = detect_corners_k
-        self.detect_corners_threshold_ratio = detect_corners_threshold_ratio
-        self.detect_corners_dilated_ksize = detect_corners_dilated_ksize
-        self.detect_corners_closed_ksize = detect_corners_closed_ksize
+        self.extract_maskNet_GaussianKernelSize = extract_maskNet_GaussianKernelSize
+        self.extract_maskNet_addWeighted = extract_maskNet_addWeighted
+        self.extract_maskNet_CLAHE = extract_maskNet_CLAHE
+        self.extract_maskNet_threshold = extract_maskNet_threshold
+        self.detect_node_erode = detect_node_erode
+        self.detect_node_opened = detect_node_opened
+        self.detect_node_dilated = detect_node_dilated
         self.group_points_by_y_threshold = group_points_by_y_threshold
         self.gen_centers_min_area = gen_centers_min_area
+        self.filter_rows_threshold = filter_rows_threshold
         self.check_error_expected_x_distance = check_error_expected_x_distance
         self.check_error_allowed_x_error = check_error_allowed_x_error
         self.check_error_expected_angle = check_error_expected_angle
@@ -41,68 +65,128 @@ class ImageProcessor:
         self.check_error_allowed_y_error = check_error_allowed_y_error
 
     @staticmethod
-    def set_resolution(cap: cv2.VideoCapture, list_reso: tuple) -> None:
-        # Đặt độ phân giải theo tuple (width, height)
+    def set_resolution(cap: cv2.VideoCapture, list_reso: tuple=(1920, 1080)) -> None:
+        """Đặt độ phân giải theo tuple (width, height)"""
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, list_reso[0])
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, list_reso[1])
 
-    def cm_to_pixels(self, cm: float, distance_cm: float, distance_pixel: float) -> float:
+    def extract_roi(self, image: np.ndarray, isShow: bool, size: tuple=(200, 1700, 200, 620)) -> np.ndarray:
         """
-        Quy đổi cm sang pixel dựa trên số pixel trên mỗi cm.
-        """
-        pixels_per_cm = distance_pixel / distance_cm 
-        pixels = cm * pixels_per_cm
-        return pixels
+        Cắt và trích xuất vùng ROI từ ảnh dựa trên kích thước đã cho.
 
-    def extract_roi(self, image: np.ndarray, isShow: bool) -> np.ndarray:
-        """Cắt vùng ROI theo roi_coords."""
-        x_start, x_end, y_start, y_end = self.roi_coords
+        Parameters:
+            image (np.ndarray): Ảnh đầu vào.
+            isShow (bool): Cờ xác định có hiển thị ROI hay không.
+            size (tuple): Vùng cắt theo định dạng (x_start, x_end, y_start, y_end).
+
+        Returns:
+            np.ndarray: Ảnh cắt ra theo vùng ROI.
+        """
+        x_start, x_end, y_start, y_end = size
         rs = image[y_start:y_end, x_start:x_end]
         if isShow:
             cv2.imshow("ROI", rs)
         return rs
 
-    def extract_edges(self, roi: np.ndarray, isShow: bool) -> np.ndarray:
+    def extract_maskNet(self, roi: np.ndarray, isShow: bool,
+        GaussianKernelSize: tuple=(11,11),
+        addWeighted: tuple=(7,-6),
+        CLAHE: tuple=(7,(60,40)),
+        threshold: float=190
+    ) -> np.ndarray:
         """
-        Tiền xử lý ROI:
-          - Chuyển ảnh sang grayscale.
-          - Áp dụng Gaussian Blur.
-          - Phát hiện cạnh bằng Canny.
+        Tăng cường độ tương phản và chuyển ảnh ROI sang nhị phân.
+
+        Quy trình:
+          - Chuyển ảnh ROI sang thang độ xám.
+          - Áp dụng GaussianBlur để giảm nhiễu.
+          - Tăng độ sắc nét qua phép cộng trọng số.
+          - Sử dụng CLAHE để tăng độ tương phản.
+          - Chuyển ảnh đã xử lý sang ảnh nhị phân theo ngưỡng.
+
+        Parameters:
+            roi (np.ndarray): Ảnh ROI đầu vào.
+            isShow (bool): Cờ xác định có hiển thị các bước trung gian hay không.
+            GaussianKernelSize (tuple): Kích thước kernel cho GaussianBlur.
+            addWeighted (tuple): Hệ số (alpha, beta) cho phép tăng sắc nét.
+            CLAHE (tuple): Thông số cho CLAHE gồm (clipLimit, (tileGridSize_x, tileGridSize_y)).
+            threshold (float): Ngưỡng chuyển đổi ảnh xám sang nhị phân.
+
+        Returns:
+            np.ndarray: Ảnh nhị phân sau khi xử lý.
         """
         gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray_roi, (3, 3), 1.4)
-        edges = cv2.Canny(blurred, 50, 255)
-        if isShow:
-            cv2.imshow("Edges", edges)
-        return edges
+        cv2.imshow("gray_roi", gray_roi)
 
-    def detect_corners(self, edges: np.ndarray, isShow: bool) -> np.ndarray:
-        """
-        Phát hiện góc bằng thuật toán Harris và tạo mặt nạ.
-        """
-        corners = cv2.cornerHarris(np.float32(edges),
-                                   self.detect_corners_block_size,
-                                   self.detect_corners_ksize,
-                                   self.detect_corners_k)
-        threshold_value = self.detect_corners_threshold_ratio * corners.max()
-        _, corner_mask = cv2.threshold(corners, threshold_value, 255, cv2.THRESH_BINARY)
-        
-        # Dilation: sử dụng kernel riêng cho bước này
-        kernel_dilate = np.ones(self.detect_corners_dilated_ksize, np.uint8)
-        corner_mask_dilated = cv2.dilate(corner_mask, kernel_dilate)
-        
-        # Morphological closing: sử dụng kernel từ detect_corners_closed_ksize
-        kernel_closed = np.ones(self.detect_corners_closed_ksize, np.uint8)
-        closed_img = cv2.morphologyEx(corner_mask_dilated, cv2.MORPH_CLOSE, kernel_closed, iterations=3)
-        
-        rs = np.uint8(closed_img)
-        if isShow:
-            cv2.imshow("Corner Mask", rs)
-        return rs
 
-    def draw_mask_on_image(self, image: np.ndarray, mask: np.ndarray, isShow: bool, color=(0, 0, 255), alpha=1):
+        #Tăng độ tương phản
+        filtered = cv2.GaussianBlur(gray_roi, GaussianKernelSize, 0)
+        # median_filtered = cv2.medianBlur(claheImage, 11)
+        sharpened = cv2.addWeighted(gray_roi, addWeighted[0], filtered, addWeighted[1], 0)
+        # f2 = cv2.GaussianBlur(sharpened, (3,3), 0)
+        clahe = cv2.createCLAHE(clipLimit=CLAHE[0], tileGridSize=CLAHE[1])
+        claheImage = clahe.apply(sharpened)
+        cv2.imshow("sharpened", claheImage)
+
+        #chuyển sang ảnh nhị phân
+        _, thresh = cv2.threshold(claheImage, threshold, 255, cv2.THRESH_BINARY)
+
+        if isShow:
+            cv2.imshow("thresh", thresh)
+        return thresh
+
+    def detect_node(self, image: np.ndarray, 
+                       isShow: bool, 
+                       erode: tuple=((5,3), 1), 
+                       opened: tuple=(2,2),
+                       dilated: tuple=((3,3), 4)) -> np.ndarray:
         """
-        Vẽ mask trực tiếp lên ảnh với màu và độ trong suốt cho trước.
+        Phát hiện các góc (nút) lưới trong ảnh nhị phân thông qua các thao tác xói mòn, mở và giãn nở.
+
+        Quy trình:
+          - Xói mòn ảnh để loại bỏ nhiễu.
+          - Sử dụng phép mở (opening) để loại bỏ các chi tiết nhỏ không mong muốn.
+          - Giãn nở ảnh để nhấn mạnh các góc phát hiện được.
+
+        Parameters:
+            image (np.ndarray): Ảnh nhị phân đầu vào.
+            isShow (bool): Cờ xác định có hiển thị các bước trung gian hay không.
+            erode (tuple): Thông số cho phép xói mòn gồm (kernel size, iterations).
+            opened (tuple): Kích thước kernel cho phép mở.
+            dilated (tuple): Thông số cho phép giãn nở gồm (kernel size, iterations).
+
+        Returns:
+            np.ndarray: Ảnh sau khi giãn nở, với các góc được nhấn mạnh.
+        """
+        #xói mòn ảnh
+        erodeImage = cv2.erode(image, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,erode[0]), iterations = erode[1])
+        cv2.imshow("erode", erodeImage)
+
+        # Loại bỏ các chi tiết không đủ chiều ngang (opening)
+        openedImage = cv2.morphologyEx(erodeImage, cv2.MORPH_OPEN, np.ones(opened, np.uint8))
+        cv2.imshow("openedImage", openedImage)
+
+        # Thực hiện phép dilation, có thể thay đổi iterations để tăng mức độ nở
+        dilatedImage = cv2.dilate(openedImage, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,dilated[0]), iterations=dilated[1] )
+
+        if isShow:
+            cv2.imshow("dilatedImage", dilatedImage)
+        return dilatedImage
+
+    def draw_mask_on_image(self, image: np.ndarray, mask: np.ndarray, isShow: bool, 
+        color=(0, 0, 255), alpha=1):
+        """
+        Vẽ overlay của mask lên ảnh gốc với màu sắc và độ trong suốt đã cho.
+
+        Parameters:
+            image (np.ndarray): Ảnh gốc.
+            mask (np.ndarray): Mask nhị phân (các giá trị > 0 được xem là vùng mask).
+            isShow (bool): Cờ xác định có hiển thị ảnh kết quả hay không.
+            color (tuple): Màu dùng để vẽ mask (theo định dạng BGR).
+            alpha (float): Hệ số trong suốt của overlay.
+
+        Returns:
+            np.ndarray: Ảnh sau khi overlay mask.
         """
         # Chuyển mask về dạng nhị phân (0 hoặc 1)
         mask = (mask > 0).astype(np.uint8)
@@ -112,14 +196,22 @@ class ImageProcessor:
         masked_image = cv2.addWeighted(image, 1, mask_colored, alpha, 0, dtype=cv2.CV_8U)
         
         if isShow:
-            cv2.imshow("detect corners", masked_image)
+            cv2.imshow("detect corners rgb", masked_image)
 
         return masked_image
 
-    def gen_centers(self, binary_image: np.ndarray, raw_image: np.ndarray, min_area: float, isShow: bool) -> tuple:
+    def gen_centers(self, binary_image: np.ndarray, raw_image: np.ndarray, isShow: bool, min_area: float=50) -> tuple:
         """
-        Nhận diện các nhóm điểm ảnh liền kề và tính tâm của mỗi nhóm.
-        Trả về: (danh sách tâm, ảnh đã vẽ các điểm tâm)
+        Nhận diện các thành phần liên thông trong ảnh nhị phân và tính toán tâm của mỗi thành phần.
+
+        Parameters:
+            binary_image (np.ndarray): Ảnh nhị phân chứa các thành phần liên thông.
+            raw_image (np.ndarray): Ảnh gốc dùng để vẽ tâm các thành phần.
+            isShow (bool): Cờ xác định có hiển thị ảnh kết quả hay không.
+            min_area (float): Diện tích tối thiểu để xem một đối tượng là nút hợp lệ.
+
+        Returns:
+            tuple: (Danh sách các tâm dạng (x, y), Ảnh gốc đã được vẽ tâm).
         """
         num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(binary_image, connectivity=8)
         centers = []
@@ -133,65 +225,113 @@ class ImageProcessor:
         if isShow:
             cv2.imshow("Centers", raw_image)
         return centers, raw_image
-
-    def group_points_by_y(self, points: list, raw_image: np.ndarray, threshold: float, isShow: bool) -> tuple:
+    
+    def group_points_by_y(
+        self,
+        points: tuple[tuple[int, int]],
+        raw_image: np.ndarray,
+        isShow: bool,
+        threshold: float=4
+    ) -> tuple[list[list[tuple[int, int]]], np.ndarray]:
         """
-        Nhóm các điểm theo trục y và vẽ các đường nối các điểm trong cùng nhóm.
-        Trả về: (danh sách các nhóm điểm, ảnh đã vẽ)
+        Nhóm các điểm dựa trên tọa độ y và vẽ các đường nối giữa các điểm cùng nhóm.
+
+        Quy trình:
+          1. Sắp xếp các điểm theo thứ tự tăng dần của tọa độ y.
+          2. Quét danh sách và nhóm các điểm có hiệu số y nhỏ hơn hoặc bằng threshold.
+          3. Sắp xếp các điểm trong mỗi nhóm theo thứ tự tăng dần của tọa độ x.
+          4. Vẽ các đường nối và chấm tròn các điểm trong từng nhóm trên ảnh.
+
+        Parameters:
+            points (tuple): Danh sách các điểm dạng (x, y).
+            raw_image (np.ndarray): Ảnh dùng để vẽ các nhóm điểm.
+            isShow (bool): Cờ xác định có hiển thị ảnh kết quả hay không.
+            threshold (float): Ngưỡng cho phép sai lệch trên trục y để nhóm các điểm.
+
+        Returns:
+            tuple: (Danh sách các nhóm điểm, Ảnh đã vẽ kết quả).
         """
         if not points:
             return [], raw_image
 
+        # 1) Sắp xếp theo y tăng dần
         points.sort(key=lambda p: p[1])
-        groups = defaultdict(list)
-        group_index = 0
-        current_group_y = points[0][1]
-        current_group_x = points[0][0]
 
-        for point in points:
-            x, y = point
-            tempY = y - current_group_y
-            tempX = x - current_group_x
+        # Lưu lại danh sách điểm đã sắp xếp theo y để in số thứ tự sau
+        sorted_points = points.copy()
 
-            if tempY > threshold:
-                group_index += 1
+        groups = []
+        current_group = [points[0]]
 
-            current_group_y = y
-            current_group_x = x
-            groups[group_index].append((x, y))
+        # 2) Gom nhóm theo threshold
+        for i in range(1, len(points)):
+            prev_point = points[i - 1]
+            current_point = points[i]
+            
+            # Chênh lệch y của hai điểm liên tiếp
+            diff_y = current_point[1] - prev_point[1]
 
-            if tempX < 0 and len(groups[group_index]) >= 2:
-                groups[group_index][-2], groups[group_index][-1] = groups[group_index][-1], groups[group_index][-2]
+            if diff_y <= threshold:
+                # Vẫn nằm trong cùng một nhóm
+                current_group.append(current_point)
+            else:
+                # Tạo nhóm mới
+                groups.append(current_group)
+                current_group = [current_point]
 
-        for group_points in groups.values():
-            group_points.sort(key=lambda p: p[0])
-            color = [random.randint(0, 255) for _ in range(3)]
-            if len(group_points) > 1:
-                for i in range(len(group_points) - 1):
-                    pt1 = group_points[i]
-                    pt2 = group_points[i+1]
+        # Đừng quên nhóm cuối cùng
+        groups.append(current_group)
+
+        # 3) Sắp xếp từng nhóm theo x tăng dần
+        for group in groups:
+            group.sort(key=lambda p: p[0])
+
+        # 4) Vẽ các điểm và đường nối trong từng nhóm
+        for group in groups:
+            # color = [random.randint(0, 255) for _ in range(3)]
+            color = (0,255,0)
+            # Vẽ các đoạn thẳng nối điểm liền kề
+            if len(group) > 1:
+                for i in range(len(group) - 1):
+                    pt1 = group[i]
+                    pt2 = group[i + 1]
                     cv2.line(raw_image, pt1, pt2, (234, 63, 247), 2)
-            for (x, y) in group_points:
+            # Vẽ chấm tròn cho từng điểm
+            for (x, y) in group:
                 cv2.circle(raw_image, (x, y), 5, color, -1)
+
+        # # 5) In số thứ tự của các điểm (theo thứ tự tăng dần của y) lên ảnh.
+        # #    Sử dụng sorted_points đã được sắp xếp theo y.
+        # for idx, (x, y) in enumerate(sorted_points, start=1):
+        #     # Dịch chuyển vị trí in số để không che điểm
+        #     cv2.putText(raw_image, str(idx), (x + 7, y - 7),
+        #                 cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 255), 1, cv2.LINE_AA)
 
         if isShow:
             cv2.imshow("Grouped Points", raw_image)
-
-        return list(groups.values()), raw_image
+        return groups, raw_image
 
     def filter_rows(self, matrix: list, threshold: float = 0.5) -> list:
         """
-        Lọc các hàng theo số lượng nút và lấy ra hàng ở giữa cùng với các hàng lân cận.
+        Lọc các hàng (row) dựa trên số lượng nút để lấy ra hàng ở giữa và các hàng lân cận.
+
+        Parameters:
+            matrix (list): Danh sách các hàng, mỗi hàng là danh sách các điểm.
+            threshold (float): Tỉ lệ phần trăm số nút tối thiểu (so với trung bình) để duy trì hàng.
+
+        Returns:
+            list: Danh sách các hàng đã được lọc.
         """
         if not matrix:
             return []
 
-        avg_nodes = sum(len(row) for row in matrix) / len(matrix)
-        filtered_rows = [row for row in matrix if len(row) >= threshold * avg_nodes]
+        avg_nodes = sum(len(row) for row in matrix) / len(matrix) #trung bình số nút trong 1 hàng
+        filtered_rows = [row for row in matrix if len(row) >= threshold * avg_nodes] #lọc ra những hàng có số nút ít hơn threshold% (50%)
 
         if not filtered_rows:
             return []
 
+        #lọc ra hàng đầu, cuối. nút ở đầu, cuối.
         n = len(filtered_rows)
         mid_index = n // 2 - 1 if n % 2 == 0 else n // 2
         start_index = max(0, mid_index - 1)
@@ -199,12 +339,29 @@ class ImageProcessor:
         return filtered_rows[start_index:end_index]
 
     def check_errors(self, matrix: list, raw_image: np.ndarray,
-                     expected_x_distance: float, allowed_x_error: float,
-                     expected_angle: float, allowed_angle_error: float,
-                     expected_y_distance: float, allowed_y_error: float) -> tuple:
+                     expected_x_distance: float = 20.0, allowed_x_error: float = 5.0,
+                 expected_angle: float = 0.0, allowed_angle_error: float = 10.0,
+                 expected_y_distance: float = 80.0, allowed_y_error: float = 8.0) -> tuple[np.ndarray,bool]:
         """
-        Kiểm tra các lỗi về khoảng cách và góc giữa các điểm, vẽ các đường lỗi lên ảnh.
-        Trả về: (ảnh đã vẽ, flag báo lỗi)
+        Kiểm tra lỗi trong việc sắp xếp các điểm dựa trên khoảng cách ngang, góc và khoảng cách dọc giữa các hàng.
+
+        Quy trình:
+          - Với mỗi cặp điểm liên tiếp trong một hàng, kiểm tra khoảng cách theo trục x và góc tạo thành.
+          - Tính trung bình vị trí của các hàng và kiểm tra khoảng cách dọc giữa các hàng.
+          - Vẽ các đường với màu sắc khác nhau để thể hiện kết quả kiểm tra (lỗi hay không).
+
+        Parameters:
+            matrix (list): Danh sách các hàng, mỗi hàng chứa các điểm.
+            raw_image (np.ndarray): Ảnh dùng để vẽ các chỉ số lỗi.
+            expected_x_distance (float): Khoảng cách ngang dự kiến giữa các điểm.
+            allowed_x_error (float): Sai số cho phép cho khoảng cách ngang.
+            expected_angle (float): Góc dự kiến giữa các điểm khi nối với nhau.
+            allowed_angle_error (float): Sai số cho phép của góc.
+            expected_y_distance (float): Khoảng cách dọc dự kiến giữa các hàng.
+            allowed_y_error (float): Sai số cho phép của khoảng cách dọc.
+
+        Returns:
+            tuple: (Ảnh đã vẽ chỉ báo lỗi, Cờ Boolean cho biết có lỗi hay không).
         """
         error = False
         allowed_x_min = expected_x_distance - allowed_x_error
@@ -252,39 +409,55 @@ class ImageProcessor:
 
     def process(self, src, isLoadImg: bool = False, isShow: bool = False) -> tuple:
         """
-        Pipeline xử lý ảnh:
-          1. Đọc ảnh.
-          2. Cắt ROI.
-          3. Phát hiện cạnh.
-          4. Phát hiện góc.
-          5. Xác định tâm các nút.
-          6. Nhóm các điểm.
-          7. Lọc các hàng và kiểm tra lỗi.
-        Trả về: (ảnh gốc, edges, corner_mask, kết quả cuối cùng)
+        Thực hiện pipeline xử lý ảnh hoàn chỉnh gồm:
+          1. Đọc ảnh từ file hoặc sử dụng ảnh đầu vào.
+          2. Cắt vùng ROI.
+          3. Tăng cường độ tương phản và chuyển sang ảnh nhị phân.
+          4. Phát hiện các góc của lưới.
+          5. Xác định tâm của các nút.
+          6. Nhóm các tâm theo trục y.
+          7. Lọc các hàng dựa trên số lượng nút.
+          8. Kiểm tra lỗi về khoảng cách và góc giữa các điểm.
+
+        Parameters:
+            src: Đường dẫn file ảnh hoặc mảng ảnh.
+            isLoadImg (bool): Nếu True, sẽ load ảnh từ file.
+            isShow (bool): Nếu True, sẽ hiển thị các bước trung gian và kết quả cuối cùng.
+
+        Returns:
+            tuple: (Cờ báo lỗi (True nếu có lỗi), Ảnh kết quả cuối cùng đã vẽ chỉ báo lỗi).
         """
         # Bước 1: Đọc ảnh
         image = cv2.imread(src) if isLoadImg else src
         # Bước 2: Cắt ROI
-        roi = self.extract_roi(image, isShow=False)
+        roi = self.extract_roi(image, isShow=False, size=self.extract_roi_size)
         # Bước 3: Phát hiện cạnh
-        edges = self.extract_edges(roi, isShow=False)
+        edges = self.extract_maskNet(roi, isShow=True,
+                                     GaussianKernelSize=self.extract_maskNet_GaussianKernelSize,
+                                     addWeighted=self.extract_maskNet_addWeighted,
+                                     CLAHE=self.extract_maskNet_CLAHE,
+                                     threshold=self.extract_maskNet_threshold)
         # Bước 4: Phát hiện góc và tạo mặt nạ
-        corner_mask = self.detect_corners(edges, isShow=False)
-        self.draw_mask_on_image(roi, corner_mask, isShow=False)
+        corner_mask = self.detect_node(edges, isShow=True)
+        self.draw_mask_on_image(roi, corner_mask, isShow=True)
         # Bước 5: Xác định các nút lưới
-        centers, center_image = self.gen_centers(corner_mask, roi, self.gen_centers_min_area, isShow=False)
+        centers, center_image = self.gen_centers(corner_mask, roi, isShow=True, 
+                                                 min_area=self.gen_centers_min_area)
         # Bước 6: Nhóm các điểm theo trục y
-        gr, gr_image = self.group_points_by_y(centers, roi, self.group_points_by_y_threshold, isShow=False)
+        gr, gr_image = self.group_points_by_y(centers, roi, isShow=True, 
+                                              threshold=self.group_points_by_y_threshold)
+        # print(gr)
         # Bước 7: Lọc các hàng
-        filter_gr = self.filter_rows(gr)
+        filter_gr = self.filter_rows(gr, 
+                                     threshold=self.filter_rows_threshold)
         # Bước 8: Kiểm tra lỗi
         final_rs, e = self.check_errors(filter_gr, gr_image,
-                                         self.check_error_expected_x_distance,
-                                         self.check_error_allowed_x_error,
-                                         self.check_error_expected_angle,
-                                         self.check_error_allowed_angle_error,
-                                         self.check_error_expected_y_distance,
-                                         self.check_error_allowed_y_error)
+                                         expected_x_distance=self.check_error_expected_x_distance,
+                                         allowed_x_error=self.check_error_allowed_x_error,
+                                         expected_angle=self.check_error_expected_angle,
+                                         allowed_angle_error=self.check_error_allowed_angle_error,
+                                         expected_y_distance=self.check_error_expected_y_distance,
+                                         allowed_y_error=self.check_error_allowed_y_error)
         if isShow:
             cv2.imshow("Final Result", final_rs)
             print("Lỗi") if e else print("Không lỗi")
@@ -293,7 +466,19 @@ class ImageProcessor:
 
     def processImgFolder(self, folderPath: str) -> None:
         """
-        Duyệt qua các file ảnh trong folder, xử lý và hiển thị kết quả.
+        Duyệt qua các file ảnh trong thư mục, xử lý từng ảnh và hiển thị kết quả.
+
+        Quy trình:
+          - Kiểm tra sự tồn tại của thư mục.
+          - Lấy danh sách các file ảnh có đuôi mở rộng cho phép.
+          - Xử lý từng ảnh qua pipeline xử lý.
+          - Chờ phím nhấn để chuyển sang ảnh tiếp theo hoặc thoát.
+
+        Parameters:
+            folderPath (str): Đường dẫn tới thư mục chứa ảnh.
+
+        Returns:
+            None.
         """
         if not os.path.isdir(folderPath):
             print(f"Lỗi: Thư mục '{folderPath}' không tồn tại!")
@@ -321,7 +506,16 @@ class ImageProcessor:
 
     def realTime(self) -> None:
         """
-        Xử lý thời gian thực từ hai camera với độ phân giải 1920x1080.
+        Xử lý thời gian thực từ camera với độ phân giải được đặt trước.
+
+        Quy trình:
+          - Mở kết nối đến camera đầu tiên.
+          - Đặt độ phân giải cho camera.
+          - Liên tục đọc frame, xử lý và hiển thị kết quả.
+          - Cho phép thoát quá trình xử lý bằng phím 'q' hoặc thông qua KeyboardInterrupt.
+
+        Returns:
+            None.
         """
         cap1 = cv2.VideoCapture(0)  # Mở camera 0
         # cap2 = cv2.VideoCapture(1)  # Mở camera 1
@@ -332,7 +526,7 @@ class ImageProcessor:
             # cap2.release()
             return
 
-        ImageProcessor.set_resolution(cap1, (1920, 1080))
+        ImageProcessor.set_resolution(cap1, list_reso=(1920, 1080))
         # ImageProcessor.set_resolution(cap2, (1920, 1080))
 
         try:
@@ -364,5 +558,10 @@ class ImageProcessor:
             print("Đã dừng xử lý do nhận lệnh KeyboardInterrupt.")
         finally:
             cap1.release()
-            cap2.release()
             cv2.destroyAllWindows()
+
+if __name__ == "__main__":
+    folder_path = r"D:\DaiHoc\Intern\ThienPhuocCompany\data_fishNet\luoiMoi2"  # Thay đổi đường dẫn phù hợp
+    processor = ImageProcessor()
+    processor.processImgFolder(folder_path)
+    # processor.realTime()  
