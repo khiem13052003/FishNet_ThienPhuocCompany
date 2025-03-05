@@ -17,7 +17,7 @@ class ImageProcessor:
                  detect_node_opened: tuple=(2,2),
                  detect_node_dilated: tuple=((3,3), 4),
                  gen_centers_min_area: float = 50.0,
-                 group_points_by_y_threshold: float = 4,
+                 group_points_by_y_threshold: float = 4.0,
                  filter_rows_threshold: float=0.5,
                  check_error_expected_x_distance: float = 20.0, check_error_allowed_x_error: float = 5.0,
                  check_error_expected_angle: float = 0.0, check_error_allowed_angle_error: float = 10.0,
@@ -86,6 +86,7 @@ class ImageProcessor:
         rs = image[y_start:y_end, x_start:x_end]
         if isShow:
             cv2.imshow("ROI", rs)
+            cv2.moveWindow("ROI", 100, 100)
         return rs
 
     def extract_maskNet(self, roi: np.ndarray, isShow: bool,
@@ -116,8 +117,7 @@ class ImageProcessor:
             np.ndarray: Ảnh nhị phân sau khi xử lý.
         """
         gray_roi = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-        cv2.imshow("gray_roi", gray_roi)
-
+        # cv2.imshow("gray_roi", gray_roi)
 
         #Tăng độ tương phản
         filtered = cv2.GaussianBlur(gray_roi, GaussianKernelSize, 0)
@@ -127,12 +127,14 @@ class ImageProcessor:
         clahe = cv2.createCLAHE(clipLimit=CLAHE[0], tileGridSize=CLAHE[1])
         claheImage = clahe.apply(sharpened)
         cv2.imshow("sharpened", claheImage)
+        cv2.moveWindow("sharpened", 100, 100)
 
         #chuyển sang ảnh nhị phân
         _, thresh = cv2.threshold(claheImage, threshold, 255, cv2.THRESH_BINARY)
 
         if isShow:
             cv2.imshow("thresh", thresh)
+            cv2.moveWindow("thresh", 100, 100)
         return thresh
 
     def detect_node(self, image: np.ndarray, 
@@ -161,16 +163,18 @@ class ImageProcessor:
         #xói mòn ảnh
         erodeImage = cv2.erode(image, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,erode[0]), iterations = erode[1])
         cv2.imshow("erode", erodeImage)
+        cv2.moveWindow("erode", 100, 100)
 
         # Loại bỏ các chi tiết không đủ chiều ngang (opening)
         openedImage = cv2.morphologyEx(erodeImage, cv2.MORPH_OPEN, np.ones(opened, np.uint8))
         cv2.imshow("openedImage", openedImage)
-
+        cv2.moveWindow("openedImage", 100, 100)
         # Thực hiện phép dilation, có thể thay đổi iterations để tăng mức độ nở
         dilatedImage = cv2.dilate(openedImage, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,dilated[0]), iterations=dilated[1] )
 
         if isShow:
             cv2.imshow("dilatedImage", dilatedImage)
+            cv2.moveWindow("dilatedImage", 100, 100)
         return dilatedImage
 
     def draw_mask_on_image(self, image: np.ndarray, mask: np.ndarray, isShow: bool, 
@@ -197,6 +201,7 @@ class ImageProcessor:
         
         if isShow:
             cv2.imshow("detect corners rgb", masked_image)
+            cv2.moveWindow("detect corners rgb", 100, 100)
 
         return masked_image
 
@@ -224,6 +229,7 @@ class ImageProcessor:
                 cv2.circle(raw_image, (cx, cy), 5, (0, 0, 255), -1)
         if isShow:
             cv2.imshow("Centers", raw_image)
+            cv2.moveWindow("Centers", 100, 100)
         return centers, raw_image
     
     def group_points_by_y(
@@ -309,6 +315,7 @@ class ImageProcessor:
 
         if isShow:
             cv2.imshow("Grouped Points", raw_image)
+            cv2.moveWindow("Grouped Points", 100, 100)
         return groups, raw_image
 
     def filter_rows(self, matrix: list, threshold: float = 0.5) -> list:
@@ -460,6 +467,7 @@ class ImageProcessor:
                                          allowed_y_error=self.check_error_allowed_y_error)
         if isShow:
             cv2.imshow("Final Result", final_rs)
+            cv2.moveWindow("Final Result", 100, 100)
             print("Lỗi") if e else print("Không lỗi")
 
         return e, final_rs
@@ -539,7 +547,8 @@ class ImageProcessor:
                 else:
                     try:
                         error, final_rs1 = self.process(frame1, isLoadImg=False, isShow=False)
-                        cv2.imshow("1", final_rs1)
+                        cv2.imshow("final", final_rs1)
+                        cv2.moveWindow("final", 100, 100)
                     except Exception as e:
                         print("Lỗi khi xử lý frame từ camera 1:", e)
 
