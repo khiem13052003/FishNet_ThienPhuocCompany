@@ -116,7 +116,7 @@ def video_loop():
         processor.check_error_allowed_y_error = get_val("Allowed_Y_Error")
         
         # Xử lý frame và hiển thị kết quả
-        error, result = processor.process(frame, isLoadImg=False, isShow=False)
+        error, result = processor.process(frame, isLoadImg=False, isShow=True)
 
         # Nhấn 'q' để thoát
         if cv2.waitKey(1) & 0xFF == ord('q'):
