@@ -19,17 +19,17 @@ params_list = [
     {"key": "Alpha",             "label": "Alpha",            "from": 0,    "to": 20,   "init": processor.extract_maskNet_addWeighted[0],        "type": "float", "resolution": 0.01},
     {"key": "Beta",              "label": "Beta",             "from": -20,  "to": 0,    "init": processor.extract_maskNet_addWeighted[1],        "type": "float", "resolution": 0.01},
     {"key": "ClipLimit",         "label": "ClipLimit",        "from": 0,    "to": 20,   "init": processor.extract_maskNet_CLAHE[0],              "type": "int",   "resolution": 1},
-    {"key": "TileGridX",         "label": "TileGridX",        "from": 0,    "to": 100,  "init": processor.extract_maskNet_CLAHE[1][0],           "type": "int",   "resolution": 1},
-    {"key": "TileGridY",         "label": "TileGridY",        "from": 0,    "to": 100,  "init": processor.extract_maskNet_CLAHE[1][1],           "type": "int",   "resolution": 1},
+    {"key": "TileGridX",         "label": "TileGridX",        "from": 1,    "to": 100,  "init": processor.extract_maskNet_CLAHE[1][0],           "type": "int",   "resolution": 1},
+    {"key": "TileGridY",         "label": "TileGridY",        "from": 1,    "to": 100,  "init": processor.extract_maskNet_CLAHE[1][1],           "type": "int",   "resolution": 1},
     {"key": "Thresh",            "label": "Thresh",           "from": 0,    "to": 255,  "init": processor.extract_maskNet_threshold,             "type": "float", "resolution": 0.01},
-    {"key": "Erode_kernel_x",    "label": "Erode_kernel_x",   "from": 1,    "to": 20,   "init": processor.detect_corners_erode[0][0],            "type": "int",   "resolution": 1},
-    {"key": "Erode_kernel_y",    "label": "Erode_kernel_y",   "from": 1,    "to": 20,   "init": processor.detect_corners_erode[0][1],            "type": "int",   "resolution": 1},
-    {"key": "Erode_iter",        "label": "Erode_iter",       "from": 0,    "to": 10,   "init": processor.detect_corners_erode[1],               "type": "int",   "resolution": 1},
-    {"key": "Opened_kernel_x",   "label": "Opened_kernel_x",  "from": 1,    "to": 20,   "init": processor.detect_corners_opened[0],              "type": "int",   "resolution": 1},
-    {"key": "Opened_kernel_y",   "label": "Opened_kernel_y",  "from": 1,    "to": 20,   "init": processor.detect_corners_opened[1],              "type": "int",   "resolution": 1},
-    {"key": "Dilated_kernel_x",  "label": "Dilated_kernel_x", "from": 1,    "to": 20,   "init": processor.detect_corners_dilated[0][0],          "type": "int",   "resolution": 1},
-    {"key": "Dilated_kernel_y",  "label": "Dilated_kernel_y", "from": 1,    "to": 20,   "init": processor.detect_corners_dilated[0][1],          "type": "int",   "resolution": 1},
-    {"key": "Dilated_iter",      "label": "Dilated_iter",     "from": 0,    "to": 10,   "init": processor.detect_corners_dilated[1],             "type": "int",   "resolution": 1},
+    {"key": "Erode_kernel_x",    "label": "Erode_kernel_x",   "from": 1,    "to": 20,   "init": processor.detect_node_erode[0][0],            "type": "int",   "resolution": 1},
+    {"key": "Erode_kernel_y",    "label": "Erode_kernel_y",   "from": 1,    "to": 20,   "init": processor.detect_node_erode[0][1],            "type": "int",   "resolution": 1},
+    {"key": "Erode_iter",        "label": "Erode_iter",       "from": 0,    "to": 10,   "init": processor.detect_node_erode[1],               "type": "int",   "resolution": 1},
+    {"key": "Opened_kernel_x",   "label": "Opened_kernel_x",  "from": 1,    "to": 20,   "init": processor.detect_node_opened[0],              "type": "int",   "resolution": 1},
+    {"key": "Opened_kernel_y",   "label": "Opened_kernel_y",  "from": 1,    "to": 20,   "init": processor.detect_node_opened[1],              "type": "int",   "resolution": 1},
+    {"key": "Dilated_kernel_x",  "label": "Dilated_kernel_x", "from": 1,    "to": 20,   "init": processor.detect_node_dilated[0][0],          "type": "int",   "resolution": 1},
+    {"key": "Dilated_kernel_y",  "label": "Dilated_kernel_y", "from": 1,    "to": 20,   "init": processor.detect_node_dilated[0][1],          "type": "int",   "resolution": 1},
+    {"key": "Dilated_iter",      "label": "Dilated_iter",     "from": 0,    "to": 10,   "init": processor.detect_node_dilated[1],             "type": "int",   "resolution": 1},
     {"key": "Min_Area",          "label": "Min_Area",         "from": 0,    "to": 500,  "init": processor.gen_centers_min_area,                "type": "float", "resolution": 0.01},
     {"key": "Group_Y_Threshold", "label": "Group_Y_Threshold","from": 0,    "to": 20,   "init": processor.group_points_by_y_threshold,         "type": "float", "resolution": 0.01},
     {"key": "FilterRows_Threshold", "label": "FilterRows_Threshold", "from": 0.0, "to": 1.0, "init": processor.filter_rows_threshold,         "type": "float", "resolution": 0.01},
@@ -96,12 +96,12 @@ def video_loop():
             (get_val("TileGridX"), get_val("TileGridY"))
         )
         processor.extract_maskNet_threshold = get_val("Thresh")
-        processor.detect_corners_erode = (
+        processor.detect_node_erode = (
             (get_val("Erode_kernel_x"), get_val("Erode_kernel_y")),
             get_val("Erode_iter")
         )
-        processor.detect_corners_opened = (get_val("Opened_kernel_x"), get_val("Opened_kernel_y"))
-        processor.detect_corners_dilated = (
+        processor.detect_node_opened = (get_val("Opened_kernel_x"), get_val("Opened_kernel_y"))
+        processor.detect_node_dilated = (
             (get_val("Dilated_kernel_x"), get_val("Dilated_kernel_y")),
             get_val("Dilated_iter")
         )
@@ -116,8 +116,7 @@ def video_loop():
         processor.check_error_allowed_y_error = get_val("Allowed_Y_Error")
         
         # Xử lý frame và hiển thị kết quả
-        error, result = processor.process(frame, isLoadImg=False, isShow=False)
-        cv2.imshow("Result", result)
+        error, result = processor.process(frame, isLoadImg=False, isShow=True)
 
         # Nhấn 'q' để thoát
         if cv2.waitKey(1) & 0xFF == ord('q'):
