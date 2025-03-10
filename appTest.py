@@ -6,7 +6,7 @@ from module.deployModel import ImageProcessor
 
 # Khởi tạo instance của ImageProcessor và dictionary chứa các Scale
 processor = ImageProcessor()
-scales = {}
+scales = dict()
 
 # Danh sách tham số với thông tin: key, label, from, to, init, kiểu và resolution
 params_list = [
@@ -14,7 +14,9 @@ params_list = [
     {"key": "ROI_x_end",         "label": "ROI_x_end",          "from": 0,    "to": 1920, "init": processor.extract_roi_size[1],  "type": "int",   "resolution": 1},
     {"key": "ROI_y_start",       "label": "ROI_y_start",        "from": 0,    "to": 1080, "init": processor.extract_roi_size[2],  "type": "int",   "resolution": 1},
     {"key": "ROI_y_end",         "label": "ROI_y_end",          "from": 0,    "to": 1080, "init": processor.extract_roi_size[3],  "type": "int",   "resolution": 1},
-    {"key": "Distance2Node",     "label": "Distance2Node",      "from": 0.0,  "to": 10.0, "init": processor.distance_2node,       "type": "float", "resolution": 0.01},
+    # {"key": "Distance2Node",     "label": "Distance2Node",      "from": 0.0,  "to": 10.0, "init": processor.distance_cm_cam2net,       "type": "float", "resolution": 0.01},
+    # {"key": "Distance2Node",     "label": "Distance2Node",      "from": 0.0,  "to": 10.0, "init": processor.dis,       "type": "float", "resolution": 0.01},
+    # {"key": "Distance2Node",     "label": "Distance2Node",      "from": 0.0,  "to": 10.0, "init": processor.distance_2node,       "type": "float", "resolution": 0.01},
     {"key": "GKernel",          "label": "GKernel",           "from": 1,    "to": 31,   "init": processor.extract_maskNet_GaussianKernelSize[0], "type": "int", "resolution": 1},
     {"key": "Alpha",             "label": "Alpha",            "from": 0,    "to": 20,   "init": processor.extract_maskNet_addWeighted[0],        "type": "float", "resolution": 0.01},
     {"key": "Beta",              "label": "Beta",             "from": -20,  "to": 0,    "init": processor.extract_maskNet_addWeighted[1],        "type": "float", "resolution": 0.01},
@@ -33,12 +35,13 @@ params_list = [
     {"key": "Min_Area",          "label": "Min_Area",         "from": 0,    "to": 500,  "init": processor.gen_centers_min_area,                "type": "float", "resolution": 0.01},
     {"key": "Group_Y_Threshold", "label": "Group_Y_Threshold","from": 0,    "to": 20,   "init": processor.group_points_by_y_threshold,         "type": "float", "resolution": 0.01},
     {"key": "FilterRows_Threshold", "label": "FilterRows_Threshold", "from": 0.0, "to": 1.0, "init": processor.filter_rows_threshold,         "type": "float", "resolution": 0.01},
-    {"key": "Expected_X_Dist",   "label": "Expected_X_Dist",  "from": 0,    "to": 100,  "init": processor.check_error_expected_x_distance,     "type": "float", "resolution": 0.01},
+    {"key": "X_Dist",   "label": "X_Dist",  "from": 0,    "to": 100,  "init": processor.distance_net_cm_x,     "type": "float", "resolution": 0.01},
     {"key": "Allowed_X_Error",   "label": "Allowed_X_Error",  "from": 0,    "to": 10,   "init": processor.check_error_allowed_x_error,         "type": "float", "resolution": 0.01},
     {"key": "Expected_Angle",    "label": "Expected_Angle",   "from": 0,    "to": 90,   "init": processor.check_error_expected_angle,          "type": "float", "resolution": 0.01},
     {"key": "Allowed_Angle_Error","label": "Allowed_Angle_Error", "from": 0,  "to": 15,   "init": processor.check_error_allowed_angle_error,     "type": "float", "resolution": 0.01},
-    {"key": "Expected_Y_Dist",   "label": "Expected_Y_Dist",  "from": 0,    "to": 200,  "init": processor.check_error_expected_y_distance,     "type": "float", "resolution": 0.01},
+    {"key": "Y_Dist",   "label": "Y_Dist",  "from": 0,    "to": 100,  "init": processor.distance_net_cm_y,     "type": "float", "resolution": 0.01},
     {"key": "Allowed_Y_Error",   "label": "Allowed_Y_Error",  "from": 0,    "to": 20,   "init": processor.check_error_allowed_y_error,         "type": "float", "resolution": 0.01},
+    {"key": "PixelCm_Dist",   "label": "PixelCm_Dist",  "from": 1,    "to": 1000,   "init": processor.distance_net_pixel_cm,         "type": "float", "resolution": 0.01},
 ]
 
 # Tạo dictionary để tra cứu kiểu dữ liệu của mỗi tham số
@@ -82,7 +85,7 @@ def video_loop():
             get_val("ROI_y_start"),
             get_val("ROI_y_end")
         )
-        processor.distance_2node = get_val("Distance2Node")
+        # processor.distance_2node = get_val("Distance2Node")
 
         # Gaussian kernel: đảm bảo số lẻ
         gk = get_val("GKernel")
@@ -108,13 +111,14 @@ def video_loop():
         processor.gen_centers_min_area = get_val("Min_Area")
         processor.group_points_by_y_threshold = get_val("Group_Y_Threshold")
         processor.filter_rows_threshold = get_val("FilterRows_Threshold")
-        processor.check_error_expected_x_distance = get_val("Expected_X_Dist")
+        processor.distance_net_cm_x = get_val("X_Dist")
         processor.check_error_allowed_x_error = get_val("Allowed_X_Error")
         processor.check_error_expected_angle = get_val("Expected_Angle")
         processor.check_error_allowed_angle_error = get_val("Allowed_Angle_Error")
-        processor.check_error_expected_y_distance = get_val("Expected_Y_Dist")
+        processor.distance_net_cm_y = get_val("Y_Dist")
         processor.check_error_allowed_y_error = get_val("Allowed_Y_Error")
-        
+        processor.distance_net_pixel_cm = get_val("PixelCm_Dist")
+
         # Xử lý frame và hiển thị kết quả
         error, result = processor.process(frame, isLoadImg=False, isShow=True)
 
@@ -202,7 +206,7 @@ def main():
     """
     global root, scales
     root = tk.Tk()
-    root.geometry("550x700")
+    root.geometry("550x700+950+0")
     root.title("Control Panel")
 
     scales = create_control_panel(root)

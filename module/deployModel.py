@@ -8,7 +8,15 @@ import matplotlib.pyplot as plt
 class ImageProcessor:
     def __init__(self,
                  extract_roi_size: tuple[int, int, int, int] = (200, 1700, 200, 620),
-                 distance_2node: float = 1.4,
+                 distance_net_cm_y: float = 7.344,
+                 distance_net_cm_x: float = 1,
+                 distance_net_pixel_cm: float = 21,
+                 undistort_image_cameraMatrix: np.ndarray = np.array([[1231.3286774632959, 0.0, 744.03151798533293],
+                                                                      [0.0, 1223.7983175377726, 358.9846249652723],
+                                                                      [0.0, 0.0, 1.0]], dtype=np.float64),
+                 undistort_image_distCoeffs: np.ndarray = np.array([0.11552635184620702, -0.09582978701393477,
+                                                                    -0.00031662782604741855, 0.031827549046139048,
+                                                                    -0.078108159887496087], dtype=np.float64),
                  extract_maskNet_GaussianKernelSize: tuple = (11,11),
                  extract_maskNet_addWeighted: tuple=(7,-6),
                  extract_maskNet_CLAHE: tuple=(7,(60,40)),
@@ -19,15 +27,21 @@ class ImageProcessor:
                  gen_centers_min_area: float = 50.0,
                  group_points_by_y_threshold: float = 4.0,
                  filter_rows_threshold: float=0.5,
-                 check_error_expected_x_distance: float = 20.0, check_error_allowed_x_error: float = 5.0,
-                 check_error_expected_angle: float = 0.0, check_error_allowed_angle_error: float = 10.0,
-                 check_error_expected_y_distance: float = 80.0, check_error_allowed_y_error: float = 8.0):
+                 check_error_allowed_x_error: float = 5.0,
+                 check_error_expected_angle: float = 0.0, 
+                 check_error_allowed_angle_error: float = 10.0,
+                 check_error_allowed_y_error: float = 50.0):
         """
         Khởi tạo các tham số cấu hình cho quá trình xử lý ảnh.
 
         Parameters:
             extract_roi_size (tuple): Kích thước vùng ROI theo định dạng (x_start, x_end, y_start, y_end).
-            distance_2node (float): Khoảng cách dự kiến giữa các nút.
+            distance_net_cm_y (float): Kích thước thực 1 mắt lưới theo chiều dọc (cm).
+            distance_net_cm_x: (float): Kích thước thực giữa 2 nút liên tiếp (cm).
+            distance_net_pixel_cm: (float): Kích thước 1 cm (pixel).
+            distance_cm_cam2net: (float): khoảng cách từ camera đến lưới (cm).
+            undistort_image_cameraMatrix (np.ndarray): Ma trận nội tại của máy ảnh.
+            undistort_image_distCoeffs (np.ndarray): Hệ số biến dạng của máy ảnh.
             extract_maskNet_GaussianKernelSize (tuple): Kích thước kernel cho Gaussian blur.
             extract_maskNet_addWeighted (tuple): Hệ số cho phép cộng trọng số để tăng cường độ sắc nét (alpha, beta).
             extract_maskNet_CLAHE (tuple): Thông số cho CLAHE gồm (clipLimit, (tileGridSize_x, tileGridSize_y)).
@@ -46,7 +60,11 @@ class ImageProcessor:
             check_error_allowed_y_error (float): Sai số cho phép đối với khoảng cách dọc.
         """
         self.extract_roi_size = extract_roi_size
-        self.distance_2node = distance_2node
+        self.distance_net_cm_y = distance_net_cm_y
+        self.distance_net_cm_x = distance_net_cm_x
+        self.distance_net_pixel_cm = distance_net_pixel_cm
+        self.undistort_image_cameraMatrix = undistort_image_cameraMatrix
+        self.undistort_image_distCoeffs = undistort_image_distCoeffs
         self.extract_maskNet_GaussianKernelSize = extract_maskNet_GaussianKernelSize
         self.extract_maskNet_addWeighted = extract_maskNet_addWeighted
         self.extract_maskNet_CLAHE = extract_maskNet_CLAHE
@@ -57,11 +75,9 @@ class ImageProcessor:
         self.group_points_by_y_threshold = group_points_by_y_threshold
         self.gen_centers_min_area = gen_centers_min_area
         self.filter_rows_threshold = filter_rows_threshold
-        self.check_error_expected_x_distance = check_error_expected_x_distance
         self.check_error_allowed_x_error = check_error_allowed_x_error
         self.check_error_expected_angle = check_error_expected_angle
         self.check_error_allowed_angle_error = check_error_allowed_angle_error
-        self.check_error_expected_y_distance = check_error_expected_y_distance
         self.check_error_allowed_y_error = check_error_allowed_y_error
 
     @staticmethod
@@ -69,6 +85,29 @@ class ImageProcessor:
         """Đặt độ phân giải theo tuple (width, height)"""
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, list_reso[0])
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, list_reso[1])
+
+    @staticmethod
+    def cm_to_pixel(cmPerPixel: float, distance_cm: float) -> float:
+        """
+        Chuyển đổi kích thước thực của đối tượng (cm) sang kích thước hiển thị (pixels)
+        dựa trên nguyên lý tam giác tương tự.
+        
+        Công thức chuyển đổi:
+            P = (F * W) / D
+        trong đó:
+        - F là độ dài tiêu cự (đã được hiệu chuẩn từ đối tượng chuẩn)
+        - W là kích thước thực của đối tượng cần đo (cm)
+        - D là khoảng cách từ camera đến đối tượng (cm)
+        
+        Parameters:
+            object_width_cm (float): Kích thước thực của đối tượng (cm).
+            distance_cm (float): Khoảng cách từ camera đến đối tượng (cm).
+            focal_length (float): Độ dài tiêu cự đã hiệu chuẩn (theo công thức calibrate_focal_length).
+        
+        Returns:
+            float: Kích thước đối tượng trong ảnh tính theo pixels.
+        """
+        return round(distance_cm*cmPerPixel,2)
 
     def extract_roi(self, image: np.ndarray, isShow: bool, size: tuple=(200, 1700, 200, 620)) -> np.ndarray:
         """
@@ -127,15 +166,50 @@ class ImageProcessor:
         clahe = cv2.createCLAHE(clipLimit=CLAHE[0], tileGridSize=CLAHE[1])
         claheImage = clahe.apply(sharpened)
         cv2.imshow("sharpened", claheImage)
-        cv2.moveWindow("sharpened", 100, 100)
+        cv2.moveWindow("sharpened", 0, 0)
 
         #chuyển sang ảnh nhị phân
         _, thresh = cv2.threshold(claheImage, threshold, 255, cv2.THRESH_BINARY)
 
         if isShow:
             cv2.imshow("thresh", thresh)
-            cv2.moveWindow("thresh", 100, 100)
+            cv2.moveWindow("thresh", 0, 0)
         return thresh
+    
+    def undistort_image(self, image: np.ndarray, cameraMatrix: np.ndarray, distCoeffs: np.ndarray, isShow: bool):
+        """
+        Hiệu chỉnh ảnh dựa trên thông số máy ảnh đã được hiệu chỉnh.
+
+        Quy trình:
+        - Tính toán new camera matrix tối ưu và xác định vùng quan tâm (ROI) dựa trên kích thước ảnh.
+        - Hiệu chỉnh ảnh sử dụng ma trận máy ảnh ban đầu và các hệ số biến dạng.
+        - Cắt ảnh theo ROI để loại bỏ các vùng ảnh không hợp lệ sau khi hiệu chỉnh.
+
+        Parameters:
+            image (np.ndarray): Ảnh đầu vào cần được hiệu chỉnh.
+            cameraMatrix (np.ndarray): Ma trận nội tại của máy ảnh.
+            distCoeffs (np.ndarray): Hệ số biến dạng của máy ảnh.
+            isShow (bool): Cờ cho biết có hiển thị các bước trung gian hay không.
+
+        Returns:
+            np.ndarray: Ảnh sau khi được hiệu chỉnh và cắt theo ROI.
+        """
+        h, w = image.shape[:2]
+        
+        # Tính toán new camera matrix tối ưu và ROI
+        newCameraMatrix, roi = cv2.getOptimalNewCameraMatrix(cameraMatrix, distCoeffs, (w, h), 1, (w, h))
+        
+        # Hiệu chỉnh ảnh
+        undistorted_img = cv2.undistort(image, cameraMatrix, distCoeffs, None, newCameraMatrix)
+        
+        # Cắt ảnh theo ROI
+        x, y, w, h = roi
+        undistorted_img = undistorted_img[y:y+h, x:x+w]
+        if isShow:
+            cv2.imshow("undistort_image", undistorted_img)
+            cv2.moveWindow(0,0)
+
+        return undistorted_img
 
     def detect_node(self, image: np.ndarray, 
                        isShow: bool, 
@@ -163,18 +237,18 @@ class ImageProcessor:
         #xói mòn ảnh
         erodeImage = cv2.erode(image, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,erode[0]), iterations = erode[1])
         cv2.imshow("erode", erodeImage)
-        cv2.moveWindow("erode", 100, 100)
+        cv2.moveWindow("erode", 0, 0)
 
         # Loại bỏ các chi tiết không đủ chiều ngang (opening)
         openedImage = cv2.morphologyEx(erodeImage, cv2.MORPH_OPEN, np.ones(opened, np.uint8))
         cv2.imshow("openedImage", openedImage)
-        cv2.moveWindow("openedImage", 100, 100)
+        cv2.moveWindow("openedImage", 0, 0)
         # Thực hiện phép dilation, có thể thay đổi iterations để tăng mức độ nở
         dilatedImage = cv2.dilate(openedImage, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,dilated[0]), iterations=dilated[1] )
 
         if isShow:
             cv2.imshow("dilatedImage", dilatedImage)
-            cv2.moveWindow("dilatedImage", 100, 100)
+            cv2.moveWindow("dilatedImage", 0, 0)
         return dilatedImage
 
     def draw_mask_on_image(self, image: np.ndarray, mask: np.ndarray, isShow: bool, 
@@ -201,7 +275,7 @@ class ImageProcessor:
         
         if isShow:
             cv2.imshow("detect corners rgb", masked_image)
-            cv2.moveWindow("detect corners rgb", 100, 100)
+            cv2.moveWindow("detect corners rgb", 0, 0)
 
         return masked_image
 
@@ -229,7 +303,7 @@ class ImageProcessor:
                 cv2.circle(raw_image, (cx, cy), 5, (0, 0, 255), -1)
         if isShow:
             cv2.imshow("Centers", raw_image)
-            cv2.moveWindow("Centers", 100, 100)
+            cv2.moveWindow("Centers", 0, 0)
         return centers, raw_image
     
     def group_points_by_y(
@@ -315,7 +389,7 @@ class ImageProcessor:
 
         if isShow:
             cv2.imshow("Grouped Points", raw_image)
-            cv2.moveWindow("Grouped Points", 100, 100)
+            cv2.moveWindow("Grouped Points", 0, 0)
         return groups, raw_image
 
     def filter_rows(self, matrix: list, threshold: float = 0.5) -> list:
@@ -410,6 +484,8 @@ class ImageProcessor:
             dy = abs(pt2[1] - pt1[1])
             if dy < (expected_y_distance - allowed_y_error) or dy > (expected_y_distance + allowed_y_error):
                 cv2.line(raw_image, pt1, pt2, color_error_y, 2)
+                cv2.circle(raw_image,pt1,2,color_error_y,2)
+                cv2.circle(raw_image,pt2,2,color_error_y,2)
                 error = True
 
         return raw_image, error
@@ -418,6 +494,7 @@ class ImageProcessor:
         """
         Thực hiện pipeline xử lý ảnh hoàn chỉnh gồm:
           1. Đọc ảnh từ file hoặc sử dụng ảnh đầu vào.
+          1.1. Calibration ảnh
           2. Cắt vùng ROI.
           3. Tăng cường độ tương phản và chuyển sang ảnh nhị phân.
           4. Phát hiện các góc của lưới.
@@ -434,8 +511,11 @@ class ImageProcessor:
         Returns:
             tuple: (Cờ báo lỗi (True nếu có lỗi), Ảnh kết quả cuối cùng đã vẽ chỉ báo lỗi).
         """
+        self.distance_net_pixel_x = ImageProcessor.cm_to_pixel(self.distance_net_pixel_cm,self.distance_net_cm_x)
+        self.distance_net_pixel_y = ImageProcessor.cm_to_pixel(self.distance_net_pixel_cm,self.distance_net_cm_y)
         # Bước 1: Đọc ảnh
         image = cv2.imread(src) if isLoadImg else src
+        image = self.undistort_image(image, self.undistort_image_cameraMatrix, self.undistort_image_distCoeffs,isShow=False)
         # Bước 2: Cắt ROI
         roi = self.extract_roi(image, isShow=False, size=self.extract_roi_size)
         # Bước 3: Phát hiện cạnh
@@ -459,16 +539,18 @@ class ImageProcessor:
                                      threshold=self.filter_rows_threshold)
         # Bước 8: Kiểm tra lỗi
         final_rs, e = self.check_errors(filter_gr, gr_image,
-                                         expected_x_distance=self.check_error_expected_x_distance,
+                                         expected_x_distance=self.distance_net_pixel_x,
                                          allowed_x_error=self.check_error_allowed_x_error,
                                          expected_angle=self.check_error_expected_angle,
                                          allowed_angle_error=self.check_error_allowed_angle_error,
-                                         expected_y_distance=self.check_error_expected_y_distance,
+                                         expected_y_distance=self.distance_net_pixel_y,
                                          allowed_y_error=self.check_error_allowed_y_error)
         if isShow:
             cv2.imshow("Final Result", final_rs)
-            cv2.moveWindow("Final Result", 100, 100)
+            cv2.moveWindow("Final Result", 0, 0)
+            print(f"x check: {self.distance_net_pixel_x} pixel\ty check: {self.distance_net_pixel_y} pixel\t angle check: {self.check_error_expected_angle} degree")
             print("Lỗi") if e else print("Không lỗi")
+            print("---------------------------")
 
         return e, final_rs
 
@@ -512,65 +594,7 @@ class ImageProcessor:
                 break
             cv2.destroyAllWindows()
 
-    def realTime(self) -> None:
-        """
-        Xử lý thời gian thực từ camera với độ phân giải được đặt trước.
-
-        Quy trình:
-          - Mở kết nối đến camera đầu tiên.
-          - Đặt độ phân giải cho camera.
-          - Liên tục đọc frame, xử lý và hiển thị kết quả.
-          - Cho phép thoát quá trình xử lý bằng phím 'q' hoặc thông qua KeyboardInterrupt.
-
-        Returns:
-            None.
-        """
-        cap1 = cv2.VideoCapture(0)  # Mở camera 0
-        # cap2 = cv2.VideoCapture(1)  # Mở camera 1
-
-        if not cap1.isOpened():
-            print("Lỗi: Không mở được một trong hai camera!")
-            cap1.release()
-            # cap2.release()
-            return
-
-        ImageProcessor.set_resolution(cap1, list_reso=(1920, 1080))
-        # ImageProcessor.set_resolution(cap2, (1920, 1080))
-
-        try:
-            while True:
-                ret1, frame1 = cap1.read()
-                # ret2, frame2 = cap2.read()
-
-                if not ret1 or frame1 is None or frame1.size == 0:
-                    print("Lỗi: Không lấy được frame hợp lệ từ camera 1!")
-                else:
-                    try:
-                        error, final_rs1 = self.process(frame1, isLoadImg=False, isShow=False)
-                        cv2.imshow("final", final_rs1)
-                        cv2.moveWindow("final", 100, 100)
-                    except Exception as e:
-                        print("Lỗi khi xử lý frame từ camera 1:", e)
-
-                # if not ret2 or frame2 is None or frame2.size == 0:
-                #     print("Lỗi: Không lấy được frame hợp lệ từ camera 2!")
-                # else:
-                #     try:
-                #         error, final_rs2 = self.process(frame2, isLoadImg=False, isShow=False)
-                #         cv2.imshow("2", final_rs2)
-                #     except Exception as e:
-                #         print("Lỗi khi xử lý frame từ camera 2:", e)
-
-                if cv2.waitKey(1) & 0xFF == ord('q'):
-                    break
-        except KeyboardInterrupt:
-            print("Đã dừng xử lý do nhận lệnh KeyboardInterrupt.")
-        finally:
-            cap1.release()
-            cv2.destroyAllWindows()
-
 if __name__ == "__main__":
     folder_path = r"D:\DaiHoc\Intern\ThienPhuocCompany\data_fishNet\luoiMoi2"  # Thay đổi đường dẫn phù hợp
     processor = ImageProcessor()
     processor.processImgFolder(folder_path)
-    # processor.realTime()  
