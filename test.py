@@ -1,29 +1,103 @@
-import cv2 
-import math
-points = []
-img = cv2.imread(r"D:\DaiHoc\Intern\ThienPhuocCompany\data_fishNet\luoiMoi2\WIN_20250303_10_57_32_Pro.jpg")
-def mouse_event(event, x, y, flags, param):
-    global img, points
+import sys
+import cv2
+from PyQt6.QtWidgets import QApplication, QWidget, QPushButton, QLabel, QVBoxLayout, QFileDialog
+from PyQt6.QtGui import QPixmap, QImage
+from PyQt6.QtCore import QTimer
 
-    if event == cv2.EVENT_LBUTTONDOWN:
-        points.append((x, y))  # Lưu tọa độ điểm được chọn
+class CameraApp(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.initUI()
 
-        if len(points) == 1:
-            cv2.circle(img, points[0], 5, (0, 255, 0), -1)
-        elif len(points) == 2:
-            cv2.circle(img, points[1], 5, (0, 255, 0), -1)
-            cv2.line(img, points[0], points[1], (255, 0, 0), 2)
-            distance = math.sqrt((points[1][0] - points[0][0])**2 + (points[1][1] - points[0][1])**2)
-            mid_x = (points[0][0] + points[1][0]) // 2
-            mid_y = (points[0][1] + points[1][1]) // 2
-            cv2.putText(img, f"{distance:.2f} px", (mid_x, mid_y), 
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
-            points.clear()  # Reset danh sách điểm
+        # Biến camera
+        self.camera_active = False
+        self.cap = None  
+        self.timer = QTimer()  
+        self.timer.timeout.connect(self.update_frame)
 
-        cv2.imshow("Image", img)
+    def initUI(self):
+        self.setWindowTitle("Camera App")
+        self.setGeometry(100, 100, 800, 600)
 
-cv2.imshow("Image", img)
-cv2.setMouseCallback("Image", mouse_event)
+        # Nút mở camera
+        self.btn_open_camera = QPushButton("Chỉnh ROI", self)
+        self.btn_open_camera.clicked.connect(self.toggle_camera)
 
-cv2.waitKey(0)
-cv2.destroyAllWindows()
+        # Nút chụp ảnh
+        self.btn_capture = QPushButton("Chụp Ảnh", self)
+        self.btn_capture.clicked.connect(self.capture_frame)
+        self.btn_capture.setEnabled(False)
+
+        # Nút chọn ảnh từ hệ thống
+        self.btn_select_image = QPushButton("Chọn Ảnh", self)
+        self.btn_select_image.clicked.connect(self.select_image)
+
+        # Label hiển thị ảnh hoặc camera
+        self.label_display = QLabel(self)
+        self.label_display.setFixedSize(640, 480)
+
+        # Layout
+        layout = QVBoxLayout()
+        layout.addWidget(self.btn_open_camera)
+        layout.addWidget(self.btn_capture)
+        layout.addWidget(self.btn_select_image)
+        layout.addWidget(self.label_display)
+        self.setLayout(layout)
+
+    def toggle_camera(self):
+        """Mở hoặc tắt camera"""
+        if self.camera_active:
+            self.camera_active = False
+            self.timer.stop()
+            self.cap.release()
+            self.label_display.clear()
+            self.btn_open_camera.setText("Chỉnh ROI")
+            self.btn_capture.setEnabled(False)
+        else:
+            self.cap = cv2.VideoCapture(0)  
+            if not self.cap.isOpened():
+                print("Không thể mở camera!")
+                return
+
+            self.camera_active = True
+            self.timer.start(30)  
+            self.btn_open_camera.setText("Tắt Camera")
+            self.btn_capture.setEnabled(True)
+
+    def update_frame(self):
+        """Cập nhật frame từ camera"""
+        ret, frame = self.cap.read()
+        if ret:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  
+            h, w, ch = frame.shape
+            bytes_per_line = ch * w
+            qimg = QImage(frame.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
+            self.label_display.setPixmap(QPixmap.fromImage(qimg))
+
+    def capture_frame(self):
+        """Chụp ảnh từ camera"""
+        ret, frame = self.cap.read()
+        if ret:
+            file_path, _ = QFileDialog.getSaveFileName(self, "Lưu ảnh", "", "PNG Files (*.png);;JPEG Files (*.jpg)")
+            if file_path:
+                cv2.imwrite(file_path, frame)
+                print(f"Ảnh đã lưu tại: {file_path}")
+
+    def select_image(self):
+        """Chọn ảnh từ hệ thống"""
+        file_path, _ = QFileDialog.getOpenFileName(self, "Chọn ảnh", "", "Images (*.png *.jpg *.jpeg)")
+        if file_path:
+            self.label_display.setPixmap(QPixmap(file_path))
+            print(f"Đã chọn ảnh: {file_path}")
+
+    def closeEvent(self, event):
+        """Giải phóng camera khi đóng"""
+        if self.cap:
+            self.cap.release()
+        event.accept()
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = CameraApp()
+    window.show()
+    sys.exit(app.exec())

@@ -4,10 +4,15 @@ import os
 import random
 import math
 import matplotlib.pyplot as plt
+from PyQt6.QtCore import QThread, pyqtSignal, Qt, QObject, QEvent, QTimer, QDateTime, QTime
+from PyQt6.QtGui import QImage
+from PyQt6.QtWidgets import *
+from PyQt6.QtGui import *
+from PyQt6.QtCore import *
 
 class ImageProcessor:
     def __init__(self,
-                 extract_roi_size: tuple[int, int, int, int] = (200, 1700, 200, 620),
+                 extract_roi_size: tuple[int, int, int, int] = (),
                  distance_net_cm_y: float = 7.344,
                  distance_net_cm_x: float = 1,
                  distance_net_pixel_cm: float = 21,
@@ -109,24 +114,24 @@ class ImageProcessor:
         """
         return round(distance_cm*cmPerPixel,2)
 
-    def extract_roi(self, image: np.ndarray, isShow: bool, size: tuple=(200, 1700, 200, 620)) -> np.ndarray:
+    def extract_roi(self, image: np.ndarray, isShow: bool, size: tuple) -> np.ndarray:
         """
         Cắt và trích xuất vùng ROI từ ảnh dựa trên kích thước đã cho.
-
-        Parameters:
-            image (np.ndarray): Ảnh đầu vào.
-            isShow (bool): Cờ xác định có hiển thị ROI hay không.
-            size (tuple): Vùng cắt theo định dạng (x_start, x_end, y_start, y_end).
-
-        Returns:
-            np.ndarray: Ảnh cắt ra theo vùng ROI.
         """
+        # print("Received ROI size in extract_roi:", size)
+        if len(size) != 4:
+            print("Invalid ROI size tuple")
+            return image
+
         x_start, x_end, y_start, y_end = size
+        # print("Extracting ROI with coordinates:", 
+        #       x_start, x_end, y_start, y_end)
+        
         rs = image[y_start:y_end, x_start:x_end]
         if isShow:
-            cv2.imshow("ROI", rs)
             cv2.moveWindow("ROI", 100, 100)
         return rs
+
 
     def extract_maskNet(self, roi: np.ndarray, isShow: bool,
         GaussianKernelSize: tuple=(11,11),
@@ -165,15 +170,15 @@ class ImageProcessor:
         # f2 = cv2.GaussianBlur(sharpened, (3,3), 0)
         clahe = cv2.createCLAHE(clipLimit=CLAHE[0], tileGridSize=CLAHE[1])
         claheImage = clahe.apply(sharpened)
-        cv2.imshow("sharpened", claheImage)
-        cv2.moveWindow("sharpened", 0, 0)
+        # cv2.imshow("sharpened", claheImage)
+        # cv2.moveWindow("sharpened", 0, 0)
 
         #chuyển sang ảnh nhị phân
         _, thresh = cv2.threshold(claheImage, threshold, 255, cv2.THRESH_BINARY)
 
-        if isShow:
-            cv2.imshow("thresh", thresh)
-            cv2.moveWindow("thresh", 0, 0)
+        # if isShow:
+        #     # cv2.imshow("thresh", thresh)
+        #     # cv2.moveWindow("thresh", 0, 0)
         return thresh
     
     def undistort_image(self, image: np.ndarray, cameraMatrix: np.ndarray, distCoeffs: np.ndarray, isShow: bool):
@@ -205,9 +210,9 @@ class ImageProcessor:
         # Cắt ảnh theo ROI
         x, y, w, h = roi
         undistorted_img = undistorted_img[y:y+h, x:x+w]
-        if isShow:
-            cv2.imshow("undistort_image", undistorted_img)
-            cv2.moveWindow(0,0)
+        # if isShow:
+        #     cv2.imshow("undistort_image", undistorted_img)
+        #     cv2.moveWindow(0,0)
 
         return undistorted_img
 
@@ -236,19 +241,19 @@ class ImageProcessor:
         """
         #xói mòn ảnh
         erodeImage = cv2.erode(image, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,erode[0]), iterations = erode[1])
-        cv2.imshow("erode", erodeImage)
-        cv2.moveWindow("erode", 0, 0)
+        # cv2.imshow("erode", erodeImage)
+        # cv2.moveWindow("erode", 0, 0)
 
         # Loại bỏ các chi tiết không đủ chiều ngang (opening)
         openedImage = cv2.morphologyEx(erodeImage, cv2.MORPH_OPEN, np.ones(opened, np.uint8))
-        cv2.imshow("openedImage", openedImage)
-        cv2.moveWindow("openedImage", 0, 0)
+        # cv2.imshow("openedImage", openedImage)
+        # cv2.moveWindow("openedImage", 0, 0)
         # Thực hiện phép dilation, có thể thay đổi iterations để tăng mức độ nở
         dilatedImage = cv2.dilate(openedImage, cv2.getStructuringElement(cv2.MORPH_ELLIPSE,dilated[0]), iterations=dilated[1] )
 
-        if isShow:
-            cv2.imshow("dilatedImage", dilatedImage)
-            cv2.moveWindow("dilatedImage", 0, 0)
+        # if isShow:
+        #     cv2.imshow("dilatedImage", dilatedImage)
+        #     cv2.moveWindow("dilatedImage", 0, 0)
         return dilatedImage
 
     def draw_mask_on_image(self, image: np.ndarray, mask: np.ndarray, isShow: bool, 
@@ -273,9 +278,9 @@ class ImageProcessor:
         mask_colored[mask == 1] = color
         masked_image = cv2.addWeighted(image, 1, mask_colored, alpha, 0, dtype=cv2.CV_8U)
         
-        if isShow:
-            cv2.imshow("detect corners rgb", masked_image)
-            cv2.moveWindow("detect corners rgb", 0, 0)
+        # if isShow:
+        #     cv2.imshow("detect corners rgb", masked_image)
+        #     cv2.moveWindow("detect corners rgb", 0, 0)
 
         return masked_image
 
@@ -301,9 +306,9 @@ class ImageProcessor:
                 cx, cy = int(centroids[i][0]), int(centroids[i][1])
                 centers.append((cx, cy))
                 cv2.circle(raw_image, (cx, cy), 5, (0, 0, 255), -1)
-        if isShow:
-            cv2.imshow("Centers", raw_image)
-            cv2.moveWindow("Centers", 0, 0)
+        # if isShow:
+        #     cv2.imshow("Centers", raw_image)
+        #     cv2.moveWindow("Centers", 0, 0)
         return centers, raw_image
     
     def group_points_by_y(
@@ -364,10 +369,6 @@ class ImageProcessor:
 
         # 3) Sắp xếp từng nhóm theo x tăng dần
         for group in groups:
-            group.sort(key=lambda p: p[0])
-
-        # 4) Vẽ các điểm và đường nối trong từng nhóm
-        for group in groups:
             # color = [random.randint(0, 255) for _ in range(3)]
             color = (0,255,0)
             # Vẽ các đoạn thẳng nối điểm liền kề
@@ -387,9 +388,9 @@ class ImageProcessor:
         #     cv2.putText(raw_image, str(idx), (x + 7, y - 7),
         #                 cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 255), 1, cv2.LINE_AA)
 
-        if isShow:
-            cv2.imshow("Grouped Points", raw_image)
-            cv2.moveWindow("Grouped Points", 0, 0)
+        # if isShow:
+        #     cv2.imshow("Grouped Points", raw_image)
+        #     cv2.moveWindow("Grouped Points", 0, 0)
         return groups, raw_image
 
     def filter_rows(self, matrix: list, threshold: float = 0.5) -> list:
@@ -490,111 +491,273 @@ class ImageProcessor:
 
         return raw_image, error
 
-    def process(self, src, isLoadImg: bool = False, isShow: bool = False) -> tuple:
+    def process(self, src, isLoadImg=False, isShow=False, skip_roi=False):
         """
-        Thực hiện pipeline xử lý ảnh hoàn chỉnh gồm:
-          1. Đọc ảnh từ file hoặc sử dụng ảnh đầu vào.
-          1.1. Calibration ảnh
-          2. Cắt vùng ROI.
-          3. Tăng cường độ tương phản và chuyển sang ảnh nhị phân.
-          4. Phát hiện các góc của lưới.
-          5. Xác định tâm của các nút.
-          6. Nhóm các tâm theo trục y.
-          7. Lọc các hàng dựa trên số lượng nút.
-          8. Kiểm tra lỗi về khoảng cách và góc giữa các điểm.
-
+        Xử lý ảnh
+        
         Parameters:
+            skip_roi: Flag cho biết có bỏ qua bước cắt ROI không
             src: Đường dẫn file ảnh hoặc mảng ảnh.
             isLoadImg (bool): Nếu True, sẽ load ảnh từ file.
             isShow (bool): Nếu True, sẽ hiển thị các bước trung gian và kết quả cuối cùng.
-
+            skip_roi (bool): Nếu True, sẽ bỏ qua bước cắt ROI.
+        
         Returns:
             tuple: (Cờ báo lỗi (True nếu có lỗi), Ảnh kết quả cuối cùng đã vẽ chỉ báo lỗi).
         """
-        self.distance_net_pixel_x = ImageProcessor.cm_to_pixel(self.distance_net_pixel_cm,self.distance_net_cm_x)
-        self.distance_net_pixel_y = ImageProcessor.cm_to_pixel(self.distance_net_pixel_cm,self.distance_net_cm_y)
-        # Bước 1: Đọc ảnh
-        image = cv2.imread(src) if isLoadImg else src
-        image = self.undistort_image(image, self.undistort_image_cameraMatrix, self.undistort_image_distCoeffs,isShow=False)
-        # Bước 2: Cắt ROI
-        roi = self.extract_roi(image, isShow=False, size=self.extract_roi_size)
-        # Bước 3: Phát hiện cạnh
-        edges = self.extract_maskNet(roi, isShow=True,
-                                     GaussianKernelSize=self.extract_maskNet_GaussianKernelSize,
-                                     addWeighted=self.extract_maskNet_addWeighted,
-                                     CLAHE=self.extract_maskNet_CLAHE,
-                                     threshold=self.extract_maskNet_threshold)
-        # Bước 4: Phát hiện góc và tạo mặt nạ
-        corner_mask = self.detect_node(edges, isShow=True)
-        self.draw_mask_on_image(roi, corner_mask, isShow=True)
-        # Bước 5: Xác định các nút lưới
-        centers, center_image = self.gen_centers(corner_mask, roi, isShow=True, 
-                                                 min_area=self.gen_centers_min_area)
-        # Bước 6: Nhóm các điểm theo trục y
-        gr, gr_image = self.group_points_by_y(centers, roi, isShow=True, 
-                                              threshold=self.group_points_by_y_threshold)
-        # print(gr)
-        # Bước 7: Lọc các hàng
-        filter_gr = self.filter_rows(gr, 
-                                     threshold=self.filter_rows_threshold)
-        # Bước 8: Kiểm tra lỗi
-        final_rs, e = self.check_errors(filter_gr, gr_image,
-                                         expected_x_distance=self.distance_net_pixel_x,
-                                         allowed_x_error=self.check_error_allowed_x_error,
-                                         expected_angle=self.check_error_expected_angle,
-                                         allowed_angle_error=self.check_error_allowed_angle_error,
-                                         expected_y_distance=self.distance_net_pixel_y,
-                                         allowed_y_error=self.check_error_allowed_y_error)
-        if isShow:
-            cv2.imshow("Final Result", final_rs)
-            cv2.moveWindow("Final Result", 0, 0)
-            print(f"x check: {self.distance_net_pixel_x} pixel\ty check: {self.distance_net_pixel_y} pixel\t angle check: {self.check_error_expected_angle} degree")
-            print("Lỗi") if e else print("Không lỗi")
-            print("---------------------------")
+        try:
+            # Kiểm tra ảnh đầu vào
+            if src is None or src.size == 0:
+                print("Ảnh đầu vào không hợp lệ")
+                return False, src
 
-        return e, final_rs
+            # Bước 1: Đọc và chuyển đổi màu nếu cần
+            if isLoadImg:
+                image = cv2.imread(src)
+            else:
+          
+                # Đảm bảo ảnh ở định dạng BGR
+                if len(src.shape) == 3 and src.shape[2] == 3:
+                    image = cv2.cvtColor(src, cv2.COLOR_RGB2BGR)
+                else:
+                    image = src
+            # Kiểm tra sau khi đọc ảnh
+            if image is None or image.size == 0:
+                print("Không thể đọc ảnh")
+                return False, src
+            
+            image = self.undistort_image(image, self.undistort_image_cameraMatrix, self.undistort_image_distCoeffs, isShow=False)
+            # Bước 2: Xử lý ROI
+            if not skip_roi:
+                roi = self.extract_roi(image, isShow=False, size=self.extract_roi_size)
+            else:
+                # Đảm bảo định dạng màu đúng
+                roi = cv2.cvtColor(src, cv2.COLOR_RGB2BGR) if len(src.shape) == 3 else src
 
-    def processImgFolder(self, folderPath: str) -> None:
-        """
-        Duyệt qua các file ảnh trong thư mục, xử lý từng ảnh và hiển thị kết quả.
+            # Debug: In ra thông tin về ảnh
+            # print("Shape của ROI:", roi.shape if roi is not None else "None")
+            # print("Kiểu dữ liệu của ROI:", roi.dtype if roi is not None else "None")
+            # cv2.imshow('roi',roi)
+            # Tiếp tục xử lý...
+            edges = self.extract_maskNet(roi, isShow=True,
+                                        GaussianKernelSize=self.extract_maskNet_GaussianKernelSize,
+                                        addWeighted=self.extract_maskNet_addWeighted,
+                                        CLAHE=self.extract_maskNet_CLAHE,
+                                        threshold=self.extract_maskNet_threshold)
 
-        Quy trình:
-          - Kiểm tra sự tồn tại của thư mục.
-          - Lấy danh sách các file ảnh có đuôi mở rộng cho phép.
-          - Xử lý từng ảnh qua pipeline xử lý.
-          - Chờ phím nhấn để chuyển sang ảnh tiếp theo hoặc thoát.
+            # Bước 4: Phát hiện góc và tạo mặt nạ
+            corner_mask = self.detect_node(edges, isShow=True)
+            self.draw_mask_on_image(roi, corner_mask, isShow=True)
+            # Bước 5: Xác định các nút lưới
+            centers, center_image = self.gen_centers(corner_mask, roi, isShow=True, 
+                                                    min_area=self.gen_centers_min_area)
+            # Bước 6: Nhóm các điểm theo trục y
+            gr, gr_image = self.group_points_by_y(centers, roi, isShow=True, 
+                                                threshold=self.group_points_by_y_threshold)
+            # print(gr)
+            # Bước 7: Lọc các hàng
+            filter_gr = self.filter_rows(gr, 
+                                        threshold=self.filter_rows_threshold)
+            # Bước 8: Kiểm tra lỗi
+            final_rs, e = self.check_errors(filter_gr, gr_image,
+                                            expected_x_distance=self.distance_net_cm_x,
+                                            allowed_x_error=self.check_error_allowed_x_error,
+                                            expected_angle=self.check_error_expected_angle,
+                                            allowed_angle_error=self.check_error_allowed_angle_error,
+                                            expected_y_distance=self.distance_net_cm_y,
+                                            allowed_y_error=self.check_error_allowed_y_error)
+            if isShow:
+                cv2.imshow("Final Result", final_rs)
+                # cv2.moveWindow("Final Result", 0, 0)
+                print(f"x check: {self.distance_net_cm_x} pixel\ty check: {self.distance_net_cm_y} pixel\t angle check: {self.check_error_expected_angle} degree")
+                print("Lỗi") if e else print("Không lỗi")
+                print("---------------------------")
+            # cv2.imshow('final_rs',final_rs)
+            # print('distance_net_x', self.distance_net_cm_x)
+            # print('distance_net_y',self.distance_net_cm_y)
+            return e,final_rs
+            
+        except Exception as e:
+            print(f"Lỗi trong process: {str(e)}")
+            return False, src
+            
 
-        Parameters:
-            folderPath (str): Đường dẫn tới thư mục chứa ảnh.
+class GUIProcessor:
+    def __init__(self):
+        self.distance_net_x = 0
+        self.count_timer = None
+        # self.total_node = 0
+        self.distance_net_y = 0
+        self.x_start = 0
+        self.x_end = 0
+        self.y_start = 0
+        self.y_end = 0
+        self.erro_data = []
+        # Khởi tạo ImageProcessor một lần để tái sử dụng
+        self.image_processor = ImageProcessor()
+        self.error_count= 0
+        self.gap_seconds =5
+        self.last_process_time= None
+        self.save_path= ""
+        self.now= QDateTime.currentDateTime()
 
-        Returns:
-            None.
-        """
-        if not os.path.isdir(folderPath):
-            print(f"Lỗi: Thư mục '{folderPath}' không tồn tại!")
+    def handle_submit(self, control_panel):
+        distance_net_x = control_panel.distance_node_edit.text()
+        gap_time = control_panel.gap_time_edit.time()
+        # total_node = control_panel.total_node_edit.text()
+        distance_net_y = control_panel.distance_node_column_edit.text()
+        
+        if not distance_net_x:
+            control_panel.result_text.setText("Vui lòng nhập khoảng cách giữa 2 nút ngang !")
             return
-
-        image_extensions = ('.png', '.jpg', '.jpeg', '.bmp', '.tiff')
-        image_files = [f for f in os.listdir(folderPath) if f.lower().endswith(image_extensions)]
-        if not image_files:
-            print("Không tìm thấy ảnh trong thư mục!")
+        # if not total_node:
+        #     control_panel.result_text.setText("Vui lòng nhập tổng số nút trên 1 hàng !")
+        #     return
+        if not distance_net_y:
+            control_panel.result_text.setText("Vui lòng nhập khoảng cách giữa 2 nút nằm dọc !")
             return
+        
+        self.gap_seconds = gap_time.hour() * 3600 + gap_time.minute() * 60 + gap_time.second()
+        
+        self.image_processor.distance_net_cm_x= float(distance_net_x)
+        self.image_processor.distance_net_cm_y=float(distance_net_y)
+        
+        self.error_count= 0
+        self.erro_data =[]
+        self.last_process_time= None
+        
+        # Xóa kết quả cũ
+        control_panel.result_text.clear()
+        control_panel.submit_button.setEnabled(False)
 
-        for img_name in image_files:
-            img_path = os.path.join(folderPath, img_name)
-            try:
-                error, final_rs = self.process(img_path, isLoadImg=True, isShow=True)
-            except ValueError as e:
-                print(e)
-                continue
+    def check_timer(self):
+        """Kiểm tra xem có nên xử lý frame hiện tại không"""
+        current_time= QDateTime.currentDateTime()
+        if self.last_process_time is None:
+            self.last_process_time= current_time
+            return True
+        
+        time_diff= self.last_process_time.secsTo(current_time)
+        if time_diff >= self.gap_seconds:
+            self.last_process_time= current_time
+            return True
+        return False
 
-            key = cv2.waitKey(0)
-            if key & 0xFF == ord('q'):
-                print("Thoát chương trình.")
-                break
-            cv2.destroyAllWindows()
+    def handle_delete(self, control_panel):
+        if self.count_timer and self.count_timer.isActive():
+            self.count_timer.stop()
 
-if __name__ == "__main__":
-    folder_path = r"D:\DaiHoc\Intern\ThienPhuocCompany\data_fishNet\luoiMoi2"  # Thay đổi đường dẫn phù hợp
-    processor = ImageProcessor()
-    processor.processImgFolder(folder_path)
+        control_panel.distance_node_edit.clear()
+        control_panel.gap_time_edit.setTime(QTime(0, 0, 5))
+        # control_panel.total_node.clear()
+        control_panel.distance_node_column_edit.clear()
+        control_panel.result_text.clear()
+        control_panel.submit_button.setEnabled(True)
+        self.error_data = []
+        self.error_count=0
+    
+    def clean_up(self):
+        if self.count_timer and self.count_timer.isActive():
+            self.count_timer.stop()
+
+    def set_save_path(self,path):
+        """set folder path để lưu ảnh"""
+        self.save_path= path
+        folder_name= self.now.toString("yyyy-MM-dd")
+        self.path_folder= os.path.join(self.save_path,folder_name)
+        if not os.path.exists(self.path_folder):
+            os.makedirs(self.path_folder)
+    
+    def save_error_pic(self, frame, error_time: QDateTime):
+        """Lưu Frame khi detect được lỗi"""
+        try:
+            if not self.save_path:
+                return False
+            file_name = error_time.toString("HH-mm-ss") + ".png"
+            file_path= os.path.join(self.path_folder,file_name)
+
+            cv2.imwrite(file_path,frame)
+            print("da luu anh")
+            return True
+        except Exception as e:
+            print("Loi khi luu anh")
+            return False
+    
+    def process_frame(self, frame):
+        try: 
+            check_error= self.check_timer()
+            
+            # print("ROI values in process_frame:", 
+            #     self.x_start, self.x_end, self.y_start, self.y_end)
+
+            # Kiểm tra frame đầu vào
+            if frame is None or frame.size == 0:
+                print("Frame đầu vào rỗng")
+                return False, None
+
+            # Kiểm tra tọa độ ROI
+            if None in [self.x_start, self.x_end, self.y_start, self.y_end]:
+                print("Tọa độ ROI chưa được thiết lập")
+                return False, None
+
+            # Tạo tuple size cho hàm extract_roi
+            roi_size = (int(self.x_start), int(self.x_end), 
+                    int(self.y_start), int(self.y_end))
+            
+            # print("ROI size tuple:", roi_size)
+
+            # Trích xuất vùng ROI
+            roi_frame = self.image_processor.extract_roi(
+                image=frame,
+                isShow=False,
+                size=roi_size
+            )
+
+            if roi_frame is None or roi_frame.size == 0:
+                print("ROI frame rỗng")
+                return False, None
+
+            # Xử lý frame với vùng ROI đã cắt
+            has_error, processed_frame = self.image_processor.process(
+                src=roi_frame,  # Truyền frame đã cắt ROI
+                isLoadImg=False,
+                isShow=False,
+                skip_roi=True  # Thêm flag để không cắt ROI lần nữa
+            )
+            if check_error and has_error:
+                error_time = QDateTime.currentDateTime()
+                self.error_count += 1
+                self.erro_data.append({
+                    'time': error_time,
+                    'frame': processed_frame.copy()
+                })
+                print('current time: ', error_time)
+                self.save_error_pic(processed_frame,error_time)
+            return has_error, processed_frame
+        except Exception as e:
+            print(f"Lỗi khi xử lý frame: {str(e)}")
+            return False, None
+
+
+    
+    # def check_count(self, control_panel):
+    #     """
+    #     Kiểm tra và cập nhật số lượng lỗi theo thời gian
+    #     """
+    #     # Đếm số lỗi trong khoảng thời gian
+    #     current_time = QDateTime.currentDateTime()
+    #     # Thêm logic đếm lỗi và cập nhật giao diện ở đây
+        
+    #     pass
+
+    def set_roi_coordinates(self, x_start, x_end, y_start, y_end):
+        """Set tọa độ ROI cho việc xử lý"""
+        self.x_start = x_start
+        self.x_end = x_end
+        self.y_start = y_start
+        self.y_end = y_end
+
+# if __name__ == "__main__":
+#     folder_path = r"D:\DaiHoc\Intern\ThienPhuocCompany\data_fishNet\luoiMoi2"  # Thay đổi đường dẫn phù hợp
+#     processor = ImageProcessor()
+#     processor.processImgFolder(folder_path)
