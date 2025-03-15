@@ -629,6 +629,12 @@ class GUIProcessor:
         # Xóa kết quả cũ
         control_panel.result_text.clear()
         control_panel.submit_button.setEnabled(False)
+        
+        if self.count_timer and self.count_timer.isActive():
+            self.count_timer.stop()
+            
+        
+
 
     def check_timer(self):
         """Kiểm tra xem có nên xử lý frame hiện tại không"""
@@ -655,7 +661,10 @@ class GUIProcessor:
         control_panel.submit_button.setEnabled(True)
         self.error_data = []
         self.error_count=0
-    
+
+        self.image_processor.distance_net_cm_x= None
+        self.image_processor.distance_net_cm_y=None
+
     def clean_up(self):
         if self.count_timer and self.count_timer.isActive():
             self.count_timer.stop()
@@ -687,9 +696,6 @@ class GUIProcessor:
         try: 
             check_error= self.check_timer()
             
-            # print("ROI values in process_frame:", 
-            #     self.x_start, self.x_end, self.y_start, self.y_end)
-
             # Kiểm tra frame đầu vào
             if frame is None or frame.size == 0:
                 print("Frame đầu vào rỗng")

@@ -68,7 +68,7 @@ class MainWindow(QMainWindow):
         self.main_app= MainApp
     
         # Đây là nơi bạn sẽ thêm logic xác thực đăng nhập
-        if username == 'hoatuoitt' and password == 'Thienphuoc2025':
+        if username == '1' and password == '1':
             # Mở cửa sổ camera
             # self.camera_window = CameraPage()
             self.camera_window= CameraPage(self.main_app)

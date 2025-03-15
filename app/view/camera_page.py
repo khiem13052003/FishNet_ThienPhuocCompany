@@ -7,6 +7,7 @@ from .ROI_page import MainApp, ROIDialog
 import numpy as np
 import sys
 import os
+from PyQt6.QtWidgets import QFileDialog  
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from module.deployModel import GUIProcessor
 
@@ -132,7 +133,6 @@ class ControlPanel(QWidget):
         self.save_path_edit.setPlaceholderText("Nhập đường dẫn lưu file")
  
         self.browse_button=QPushButton("📂")
-        self.browse_button.setObjectName('browseButton')
         self.browse_button.setStyleSheet("QPushButton{font-size: 15px; background-color: #FFFFFF;}")
         self.browse_button.clicked.connect(self.browse_file)
        
@@ -316,9 +316,15 @@ class ControlPanel(QWidget):
         self.setLayout(right_layout)
     def save_pic(self):
         self.camera_page.handle_save_path_change(self)
-    def browse_file(self):
-        self.camera_page.browse_file(self)
     
+    def browse_file(self):
+        try:
+            folder_path_select = self.camera_page.select_folder()  # CameraPage xử lý việc chọn thư mục
+            if folder_path_select:
+                self.save_path_edit.setText(folder_path_select)  # ControlPanel cập nhật UI của nó
+        except Exception as e:
+            print(f"Lỗi khi chọn thư mục: {str(e)}")
+        
     def captureFrame(self):
         # Pause camera thread
         if self.camera_page.camera_thread.isRunning():
@@ -364,6 +370,8 @@ class CameraPage(QMainWindow):
         self.setup_datetime_timer()
         self.gui_processor= GUIProcessor()
         self.is_processing = False
+        self.control_panel = ControlPanel(self)
+        self.control_panel.camera_page = self
         # Create main widget and layout
         main_widget = QWidget()
         main_layout = QHBoxLayout()
@@ -393,7 +401,7 @@ class CameraPage(QMainWindow):
         left_widget.setLayout(left_layout)
         
         # Create ControlPanel instance - truyền self trực tiếp
-        self.control_panel = ControlPanel(self)
+        
         self.control_panel.submit_button.clicked.connect(self.handle_submit)
         self.control_panel.delete_button.clicked.connect(self.handle_delete)
         # Add widgets to main layout
@@ -468,11 +476,17 @@ class CameraPage(QMainWindow):
             print(f"Lỗi trong show_camera: {str(e)}")
             # self.camera.setPixmap(QPixmap.fromImage(frame))        
     
-    def browse_file(self, control_panel):
-        """Mở hộp thoại chọn thư mục"""
-        folder_path = QFileDialog.getExistingDirectory(control_panel, "Chọn thư mục")
-        if folder_path:
-            self.control_panel.save_path_edit.setText(folder_path)  
+    def select_folder(self):
+        """Mở hộp thoại chọn thư mục và trả về đường dẫn"""
+        # folder_path = QFileDialog.getExistingDirectory(None, "Chọn thư mục")
+        folder_path=QFileDialog(self)
+        folder_path.setFileMode(QFileDialog.FileMode.Directory)
+        folder_path.setOption(QFileDialog.Option.DontUseNativeDialog)
+        if folder_path.exec():
+            folder_path_select=folder_path.selectedFiles()[0]
+        if folder_path_select:
+            self.gui_processor.set_save_path(folder_path_select)  # CameraPage cập nhật processor
+        return folder_path_select
 
     
     def cleanup_datetime(self):
@@ -487,8 +501,6 @@ class CameraPage(QMainWindow):
         else:
             self.control_panel.result_text.setText("❌ Đường dẫn không hợp lệ")
     
-
-  
     def eventFilter(self, source: QObject, event: QEvent) -> bool:
         if event.type() == QEvent.Type.MouseButtonDblClick:
             if source.objectName() == 'Camera':
