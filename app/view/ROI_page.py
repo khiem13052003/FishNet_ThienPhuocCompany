@@ -276,28 +276,28 @@ class ROIDialog(QDialog):
         """
         Cập nhật điểm từ dữ liệu trong ô nhập liệu
         """
-        try:
-            # Tách chuỗi thành x và y
-            x_str, y_str = text.split(',')
-            x = int(x_str.strip())
-            y = int(y_str.strip())
-            
-            # Giới hạn trong kích thước ảnh
-            x = max(0, min(x, self.image_width - 1))
-            y = max(0, min(y, self.image_height - 1))
-            
-            # Cập nhật điểm
-            self.update_rectangle_points(idx, x, y)
-            
-            # Cập nhật tất cả các ô nhập liệu để đảm bảo tính nhất quán
-            self.update_all_point_inputs()
-            
-            # Cập nhật ảnh
-            self.q_image = self.update_image_with_roi()
-            self.image_label.setPixmap(QPixmap.fromImage(self.q_image))
-        except ValueError:
-            # Bỏ qua nếu định dạng không hợp lệ
-            pass
+        # try:
+        # Tách chuỗi thành x và y
+        x_str, y_str = text.split(',')
+        x = int(x_str.strip())
+        y = int(y_str.strip())
+        
+        # Giới hạn trong kích thước ảnh
+        x = max(0, min(x, self.image_width - 1))
+        y = max(0, min(y, self.image_height - 1))
+        
+        # Cập nhật điểm
+        self.update_rectangle_points(idx, x, y)
+        
+        # Cập nhật tất cả các ô nhập liệu để đảm bảo tính nhất quán
+        self.update_all_point_inputs()
+        
+        # Cập nhật ảnh
+        self.q_image = self.update_image_with_roi()
+        self.image_label.setPixmap(QPixmap.fromImage(self.q_image))
+        # except ValueError:
+        #     # Bỏ qua nếu định dạng không hợp lệ
+        #     pass
 
     def update_all_point_inputs(self):
         """

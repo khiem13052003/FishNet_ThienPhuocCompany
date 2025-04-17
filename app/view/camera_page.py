@@ -2,7 +2,7 @@
 import cv2
 from PyQt6.QtWidgets import *
 from PyQt6.QtGui import QPixmap, QIcon, QImage, QIntValidator
-from PyQt6.QtCore import QThread, pyqtSignal, Qt, QEvent, QObject, QTime, QDateTime, QTimer
+from PyQt6.QtCore import QThread, pyqtSignal, Qt, QEvent, QObject, QTime, QDateTime, QTimer, QMutex, QWaitCondition, QMutexLocker
 from .ROI_page import MainApp, ROIDialog
 import numpy as np
 import sys
@@ -20,52 +20,57 @@ class CaptureWebcamFramesWorker(QThread):
         super(CaptureWebcamFramesWorker, self).__init__()
         # Declare and initialize instance variables.
         self.__thread_active = True
-        self.fps = 0
         self.__thread_pause = False
+        self.mutex = QMutex()
+        self.condition = QWaitCondition()
+        self.fps = 0
+        self.cap = None
 
     def run(self) -> None:
-        # Capture video from webcam
-        cap = cv2.VideoCapture(0)
-        # Get default video FPS.
-        self.fps = cap.get(cv2.CAP_PROP_FPS)
-        print(f"Camera FPS: {self.fps}")
-        
-        # If video capturing has been initialized already
-        if cap.isOpened():
-            # While the thread is active.
-            while self.__thread_active:
-                if not self.__thread_pause:
-                    # Grabs, decodes and returns the next video frame.
-                    ret, frame = cap.read()
-                    # If frame is read correctly.
-                    if ret:
-                        # Get the frame height, width and channels.
-                        height, width, channels = frame.shape
-                        # Calculate the number of bytes per line.
-                        bytes_per_line = width * channels
-                        # Convert image from BGR to RGB
-                        cv_rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                        # Convert the image to Qt format.
-                        qt_rgb_image = QImage(cv_rgb_image.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
-                        # Scale the image
-                        qt_rgb_image_scaled = qt_rgb_image.scaled(640, 480, Qt.AspectRatioMode.KeepAspectRatio)
-                        # Emit this signal to notify that a new image or frame is available.
-                        self.ImageUpdated.emit(qt_rgb_image_scaled)
-                    else:
+        try:
+            self.cap = cv2.VideoCapture(0)
+            self.fps = self.cap.get(cv2.CAP_PROP_FPS)
+            
+            if self.cap.isOpened():
+                while self.__thread_active:
+                    self.mutex.lock()
+                    if self.__thread_pause:
+                        self.condition.wait(self.mutex)
+                    self.mutex.unlock()
+
+                    if not self.__thread_active:
                         break
-        # When everything done, release the video capture object.
-        cap.release()
-        # Tells the thread's event loop to exit with return code 0 (success).
-        self.quit()
+
+                    ret, frame = self.cap.read()
+                    if ret:
+                        height, width, channels = frame.shape
+                        bytes_per_line = width * channels
+                        cv_rgb_image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                        qt_rgb_image = QImage(cv_rgb_image.data, width, height, 
+                                            bytes_per_line, QImage.Format.Format_RGB888)
+                        qt_rgb_image_scaled = qt_rgb_image.scaled(640, 480, 
+                                            Qt.AspectRatioMode.KeepAspectRatio)
+                        self.ImageUpdated.emit(qt_rgb_image_scaled)
+        finally:
+            if self.cap is not None:
+                self.cap.release()
 
     def stop(self) -> None:
+        self.mutex.lock()
         self.__thread_active = False
+        self.condition.wakeAll()
+        self.mutex.unlock()
 
     def pause(self) -> None:
+        self.mutex.lock()
         self.__thread_pause = True
+        self.mutex.unlock()
 
     def unpause(self) -> None:
+        self.mutex.lock()
         self.__thread_pause = False
+        self.condition.wakeAll()
+        self.mutex.unlock()
 
 
 class ControlPanel(QWidget):
@@ -319,11 +324,29 @@ class ControlPanel(QWidget):
     
     def browse_file(self):
         try:
-            folder_path_select = self.camera_page.select_folder()  # CameraPage xử lý việc chọn thư mục
-            if folder_path_select:
-                self.save_path_edit.setText(folder_path_select)  # ControlPanel cập nhật UI của nó
+            # Tạm dừng camera thread một cách an toàn
+            self.camera_page.camera_thread.pause()
+            QThread.msleep(100)  # Đợi một chút để đảm bảo thread đã dừng
+
+            # Mở dialog chọn thư mục
+            folder_path = QFileDialog(self)
+            folder_path.setFileMode(QFileDialog.FileMode.Directory)
+            folder_path.setOption(QFileDialog.Option.DontUseNativeDialog)
+            
+            if folder_path.exec():
+                folder_path_select = folder_path.selectedFiles()[0]
+                if folder_path_select and os.path.exists(folder_path_select):
+                    self.save_path_edit.setText(folder_path_select)
+                    self.camera_page.gui_processor.set_save_path(folder_path_select)
+
         except Exception as e:
             print(f"Lỗi khi chọn thư mục: {str(e)}")
+            self.camera_page.control_panel.result_text.setText(f"Lỗi: {str(e)}")
+        
+        finally:
+            # Khôi phục camera thread
+            QThread.msleep(100)  # Đợi một chút trước khi khôi phục
+            self.camera_page.camera_thread.unpause()
         
     def captureFrame(self):
         # Pause camera thread
@@ -372,6 +395,7 @@ class CameraPage(QMainWindow):
         self.is_processing = False
         self.control_panel = ControlPanel(self)
         self.control_panel.camera_page = self
+        self.mutex = QMutex()  # Thêm mutex để đồng bộ hóa
         # Create main widget and layout
         main_widget = QWidget()
         main_layout = QHBoxLayout()
@@ -440,67 +464,80 @@ class CameraPage(QMainWindow):
     
     def show_camera(self, frame: QImage):
         try:
-            self.original_frame = frame.copy()
-            
-            if self.is_processing:
-                # Chuyển QImage sang numpy array
-                width = frame.width()
-                height = frame.height()
-                ptr = frame.bits()
-                ptr.setsize(height * width * 3)
-                arr = np.frombuffer(ptr, np.uint8).reshape((height, width, 3))
-                # Gọi process_frame
-                has_error, processed_frame = self.gui_processor.process_frame(arr)
-                if has_error and processed_frame is not None:
-                    self.control_panel.result_text.setText(
-                        f"Số lượng lỗi cho đến hiện tại {self.gui_processor.error_count}"
-                    )
-                # Chuyển đổi từ BGR sang RGB trước khi tạo QImage
-                    processed_frame_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
-                    height, width, channel = processed_frame_rgb.shape
-                    bytes_per_line = 3 * width
-                    processed_frame_rgb = np.ascontiguousarray(processed_frame_rgb)
-                    processed_qimg = QImage(
-                        processed_frame_rgb.data,
-                        width, 
-                        height, 
-                        bytes_per_line, 
-                        QImage.Format.Format_RGB888
-                    )
-                    self.camera.setPixmap(QPixmap.fromImage(processed_qimg))
-                    return
+            if not frame.isNull():
+                # Tạo bản sao an toàn của frame
+                with QMutexLocker(self.mutex):  # Thêm mutex làm thuộc tính của class
+                    self.original_frame = frame.copy()
+                
+                if self.is_processing:
+                    # Chuyển QImage sang numpy array một cách an toàn
+                    width = frame.width()
+                    height = frame.height()
+                    bytes_per_line = width * 3
+                    
+                    # Tạo bản sao của dữ liệu để xử lý
+                    image_data = frame.constBits()
+                    image_data.setsize(height * width * 3)
+                    arr = np.frombuffer(image_data, np.uint8).copy()
+                    arr = arr.reshape((height, width, 3))
+                    
+                    # Xử lý frame
+                    has_error, processed_frame = self.gui_processor.process_frame(arr)
+                    
+                    if has_error and processed_frame is not None:
+                        self.control_panel.result_text.setText(
+                            f"Số lượng lỗi cho đến hiện tại {self.gui_processor.error_count}"
+                        )
+                        
+                        processed_frame_rgb = cv2.cvtColor(processed_frame, cv2.COLOR_BGR2RGB)
+                        processed_qimg = QImage(
+                            processed_frame_rgb.data,
+                            processed_frame_rgb.shape[1],
+                            processed_frame_rgb.shape[0],
+                            processed_frame_rgb.shape[1] * 3,
+                            QImage.Format.Format_RGB888
+                        ).copy()  # Tạo bản sao để tránh tham chiếu đến dữ liệu tạm thời
+                        
+                        self.camera.setPixmap(QPixmap.fromImage(processed_qimg))
+                        return
+                        
                 # Hiển thị frame gốc nếu không xử lý
-            if not self.is_processing:
-                self.camera.setPixmap(QPixmap.fromImage(frame))
+                if not self.is_processing:
+                    self.camera.setPixmap(QPixmap.fromImage(frame))
+                
         except Exception as e:
             print(f"Lỗi trong show_camera: {str(e)}")
-            # self.camera.setPixmap(QPixmap.fromImage(frame))        
     
     def select_folder(self):
-        """Mở hộp thoại chọn thư mục và trả về đường dẫn"""
-        # folder_path = QFileDialog.getExistingDirectory(None, "Chọn thư mục")
-        folder_path=QFileDialog(self)
-        folder_path.setFileMode(QFileDialog.FileMode.Directory)
-        folder_path.setOption(QFileDialog.Option.DontUseNativeDialog)
-        if folder_path.exec():
-            folder_path_select=folder_path.selectedFiles()[0]
-        if folder_path_select:
-            self.gui_processor.set_save_path(folder_path_select)  # CameraPage cập nhật processor
-        return folder_path_select
+        try:
+            folder_path = QFileDialog(self)
+            folder_path.setFileMode(QFileDialog.FileMode.Directory)
+            folder_path.setOption(QFileDialog.Option.DontUseNativeDialog)
+            
+            if folder_path.exec():
+                folder_path_select = folder_path.selectedFiles()[0]
+                if folder_path_select and os.path.exists(folder_path_select):
+                    self.gui_processor.set_save_path(folder_path_select)
+                    return folder_path_select
+            return None
+        
+        except Exception as e:
+            print(f"Lỗi trong select_folder: {str(e)}")
+            return None
 
     
     def cleanup_datetime(self):
         if self.datetime_timer.isActive():
             self.datetime_timer.stop()
     
-    def handle_save_path_change(self):
-        """Xu ly khi nguoi dung cho duong dan luu anh"""
-        save_path= self.control_panel.set_path_edit.text()
+    def handle_save_path_change(self, control_panel):
+        """Xử lý khi người dùng chọn đường dẫn lưu"""
+        save_path = control_panel.save_path_edit.text()
         if save_path and os.path.exists(save_path):
             self.gui_processor.set_save_path(save_path)
         else:
-            self.control_panel.result_text.setText("❌ Đường dẫn không hợp lệ")
-    
+            control_panel.result_text.setText("❌ Đường dẫn không hợp lệ")
+
     def eventFilter(self, source: QObject, event: QEvent) -> bool:
         if event.type() == QEvent.Type.MouseButtonDblClick:
             if source.objectName() == 'Camera':
@@ -527,38 +564,43 @@ class CameraPage(QMainWindow):
         """
         Xử lý khi người dùng nhấn nút submit
         """
-        save_path = self.control_panel.save_path_edit.text()
-        if not save_path:
-            self.control_panel.result_text.setText("Vui lòng chọn đường dẫn lưu ảnh!")
-            return
-        if not os.path.exists(save_path):
-            self.control_panel.result_text.setText("❌ Đường dẫn không tồn tại")
-            return
-        self.gui_processor.set_save_path(save_path)
-        # Kiểm tra tọa độ ROI
-        if None in [self.control_panel.x_start, 
-                    self.control_panel.x_end,
-                    self.control_panel.y_start, 
-                    self.control_panel.y_end]:
-            self.control_panel.result_text.setText("Vui lòng chọn vùng ROI trước!")
-            return
+        try:
+            # Sử dụng self.control_panel thay vì control_panel
+            save_path = self.control_panel.save_path_edit.text()
+            if not save_path:
+                self.control_panel.result_text.setText("Vui lòng chọn đường dẫn lưu ảnh!")
+                return
+            if not os.path.exists(save_path):
+                self.control_panel.result_text.setText("❌ Đường dẫn không tồn tại")
+                return
+            
+            self.gui_processor.set_save_path(save_path)
+            
+            # Kiểm tra tọa độ ROI
+            if None in [self.control_panel.x_start, 
+                        self.control_panel.x_end,
+                        self.control_panel.y_start, 
+                        self.control_panel.y_end]:
+                self.control_panel.result_text.setText("Vui lòng chọn vùng ROI trước!")
+                return
 
-        # Gửi tọa độ ROI sang GUIProcessor
-        self.gui_processor.set_roi_coordinates(
-            self.control_panel.x_start,
-            self.control_panel.x_end,
-            self.control_panel.y_start,
-            self.control_panel.y_end
-        )
-        
-        print("ROI coordinates sent to GUIProcessor:", 
-              self.gui_processor.x_start,
-              self.gui_processor.x_end,
-              self.gui_processor.y_start,
-              self.gui_processor.y_end)
-        
-        self.is_processing = True
-        self.gui_processor.handle_submit(self.control_panel)
+            # Gửi tọa độ ROI sang GUIProcessor
+            self.gui_processor.set_roi_coordinates(
+                self.control_panel.x_start,
+                self.control_panel.x_end,
+                self.control_panel.y_start,
+                self.control_panel.y_end
+            )
+            
+            self.is_processing = True
+            self.gui_processor.handle_submit(self.control_panel)
+            
+        except AttributeError as e:
+            print(f"Lỗi truy cập thuộc tính: {str(e)}")
+            self.control_panel.result_text.setText("Lỗi: Vui lòng thử lại")
+        except Exception as e:
+            print(f"Lỗi không xác định: {str(e)}")
+            self.control_panel.result_text.setText(f"Lỗi: {str(e)}")
 
     def handle_delete(self):
         """

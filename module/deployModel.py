@@ -496,11 +496,11 @@ class ImageProcessor:
         Xử lý ảnh
         
         Parameters:
-            skip_roi: Flag cho biết có bỏ qua bước cắt ROI không
+            skip_roi: Flag cho biết có bỏ qua bước cắt ROI không,Nếu True, sẽ bỏ qua bước cắt ROI.
             src: Đường dẫn file ảnh hoặc mảng ảnh.
             isLoadImg (bool): Nếu True, sẽ load ảnh từ file.
             isShow (bool): Nếu True, sẽ hiển thị các bước trung gian và kết quả cuối cùng.
-            skip_roi (bool): Nếu True, sẽ bỏ qua bước cắt ROI.
+            
         
         Returns:
             tuple: (Cờ báo lỗi (True nếu có lỗi), Ảnh kết quả cuối cùng đã vẽ chỉ báo lỗi).
@@ -508,44 +508,45 @@ class ImageProcessor:
         try:
             # Kiểm tra ảnh đầu vào
             if src is None or src.size == 0:
-                print("Ảnh đầu vào không hợp lệ")
-                return False, src
+                    print("Ảnh đầu vào không hợp lệ")
+                    return False, src
 
-            # Bước 1: Đọc và chuyển đổi màu nếu cần
+                # Bước 1: Đọc và chuyển đổi màu nếu cần
             if isLoadImg:
-                image = cv2.imread(src)
+                    image = cv2.imread(src)
             else:
-          
-                # Đảm bảo ảnh ở định dạng BGR
-                if len(src.shape) == 3 and src.shape[2] == 3:
-                    image = cv2.cvtColor(src, cv2.COLOR_RGB2BGR)
-                else:
-                    image = src
-            # Kiểm tra sau khi đọc ảnh
-            if image is None or image.size == 0:
-                print("Không thể đọc ảnh")
-                return False, src
             
-            image = self.undistort_image(image, self.undistort_image_cameraMatrix, self.undistort_image_distCoeffs, isShow=False)
-            # Bước 2: Xử lý ROI
+                    # Đảm bảo ảnh ở định dạng BGR
+                    if len(src.shape) == 3 and src.shape[2] == 3:
+                        image = cv2.cvtColor(src, cv2.COLOR_RGB2BGR)
+                    else:
+                        image = src
+                    cv2.imshow('image',image)
+                # Kiểm tra sau khi đọc ảnh
+            if image is None or image.size == 0:
+                    print("Không thể đọc ảnh")
+                    return False, src
+                
+            sort_image = self.undistort_image(image, self.undistort_image_cameraMatrix, self.undistort_image_distCoeffs, isShow=False)
+                # Bước 2: Xử lý ROI
             if not skip_roi:
-                roi = self.extract_roi(image, isShow=False, size=self.extract_roi_size)
+                    roi = self.extract_roi(sort_image, isShow=False, size=self.extract_roi_size)
             else:
-                # Đảm bảo định dạng màu đúng
-                roi = cv2.cvtColor(src, cv2.COLOR_RGB2BGR) if len(src.shape) == 3 else src
+                    # Đảm bảo định dạng màu đúng
+                    roi = cv2.cvtColor(src, cv2.COLOR_RGB2BGR) if len(src.shape) == 3 else src
 
-            # Debug: In ra thông tin về ảnh
-            # print("Shape của ROI:", roi.shape if roi is not None else "None")
-            # print("Kiểu dữ liệu của ROI:", roi.dtype if roi is not None else "None")
-            # cv2.imshow('roi',roi)
-            # Tiếp tục xử lý...
+                # Debug: In ra thông tin về ảnh
+                # print("Shape của ROI:", roi.shape if roi is not None else "None")
+                # print("Kiểu dữ liệu của ROI:", roi.dtype if roi is not None else "None")
+            cv2.imshow('roi',roi)
+                # Tiếp tục xử lý...
             edges = self.extract_maskNet(roi, isShow=True,
-                                        GaussianKernelSize=self.extract_maskNet_GaussianKernelSize,
-                                        addWeighted=self.extract_maskNet_addWeighted,
-                                        CLAHE=self.extract_maskNet_CLAHE,
-                                        threshold=self.extract_maskNet_threshold)
+                                            GaussianKernelSize=self.extract_maskNet_GaussianKernelSize,
+                                            addWeighted=self.extract_maskNet_addWeighted,
+                                            CLAHE=self.extract_maskNet_CLAHE,
+                                            threshold=self.extract_maskNet_threshold)
 
-            # Bước 4: Phát hiện góc và tạo mặt nạ
+                # Bước 4: Phát hiện góc và tạo mặt nạ
             corner_mask = self.detect_node(edges, isShow=True)
             self.draw_mask_on_image(roi, corner_mask, isShow=True)
             # Bước 5: Xác định các nút lưới
@@ -579,7 +580,7 @@ class ImageProcessor:
             
         except Exception as e:
             print(f"Lỗi trong process: {str(e)}")
-            return False, src
+        return False, src
             
 
 class GUIProcessor:
@@ -681,7 +682,7 @@ class GUIProcessor:
         """Lưu Frame khi detect được lỗi"""
         try:
             if not self.save_path:
-                return False
+                    return False
             file_name = error_time.toString("HH-mm-ss") + ".png"
             file_path= os.path.join(self.path_folder,file_name)
 
@@ -730,6 +731,7 @@ class GUIProcessor:
                 isShow=False,
                 skip_roi=True  # Thêm flag để không cắt ROI lần nữa
             )
+            cv2.imshow("roi frame",roi_frame)
             if check_error and has_error:
                 error_time = QDateTime.currentDateTime()
                 self.error_count += 1
@@ -767,3 +769,5 @@ class GUIProcessor:
 #     folder_path = r"D:\DaiHoc\Intern\ThienPhuocCompany\data_fishNet\luoiMoi2"  # Thay đổi đường dẫn phù hợp
 #     processor = ImageProcessor()
 #     processor.processImgFolder(folder_path)
+
+#Ký tên: Khoa
