@@ -323,7 +323,7 @@ class ControlPanel(QWidget):
         self.camera_page.handle_save_path_change(self)
     
     def browse_file(self):
-        try:
+        # try:
             # Tạm dừng camera thread một cách an toàn
             self.camera_page.camera_thread.pause()
             QThread.msleep(100)  # Đợi một chút để đảm bảo thread đã dừng
@@ -339,11 +339,11 @@ class ControlPanel(QWidget):
                     self.save_path_edit.setText(folder_path_select)
                     self.camera_page.gui_processor.set_save_path(folder_path_select)
 
-        except Exception as e:
-            print(f"Lỗi khi chọn thư mục: {str(e)}")
-            self.camera_page.control_panel.result_text.setText(f"Lỗi: {str(e)}")
+        # except Exception as e:
+        #     print(f"Lỗi khi chọn thư mục: {str(e)}")
+        #     self.camera_page.control_panel.result_text.setText(f"Lỗi: {str(e)}")
         
-        finally:
+        # finally:
             # Khôi phục camera thread
             QThread.msleep(100)  # Đợi một chút trước khi khôi phục
             self.camera_page.camera_thread.unpause()
