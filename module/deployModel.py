@@ -28,7 +28,7 @@ class ImageProcessor:
                  extract_maskNet_threshold: float = 190,
                  detect_node_erode: tuple=((5,3), 1), 
                  detect_node_opened: tuple=(2,2),
-                 detect_node_dilated: tuple=((3,3), 4),
+                 detect_node_dilated: tuple=((3,3), 2),
                  gen_centers_min_area: float = 50.0,
                  group_points_by_y_threshold: float = 4.0,
                  filter_rows_threshold: float=0.5,
@@ -634,9 +634,6 @@ class GUIProcessor:
         if self.count_timer and self.count_timer.isActive():
             self.count_timer.stop()
             
-        
-
-
     def check_timer(self):
         """Kiểm tra xem có nên xử lý frame hiện tại không"""
         current_time= QDateTime.currentDateTime()
@@ -771,3 +768,7 @@ class GUIProcessor:
 #     processor.processImgFolder(folder_path)
 
 #Ký tên: Khoa
+# if __name__ == "__main__":
+#     folder_path = r"D:\DaiHoc\Intern\ThienPhuocCompany\data_fishNet"  # Thay đổi đường dẫn phù hợp
+#     processor = ImageProcessor()
+#     processor.processImgFolder(folder_path)
