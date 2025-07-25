@@ -1,7 +1,7 @@
 # import the require packages.
 import cv2
 from PyQt6.QtWidgets import *
-from PyQt6.QtGui import QPixmap, QIcon, QImage, QIntValidator
+from PyQt6.QtGui import QPixmap, QIcon, QImage, QIntValidator, QDoubleValidator
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QEvent, QObject, QTime, QDateTime, QTimer, QMutex, QWaitCondition, QMutexLocker
 from .ROI_page import MainApp, ROIDialog
 import numpy as np
@@ -95,7 +95,7 @@ class ControlPanel(QWidget):
         self.distance_node_label.setStyleSheet("QLabel{color: white; font-size: 15px;}")
         self.distance_node_edit = QLineEdit()
         self.distance_node_edit.setPlaceholderText("Nhập số cm")
-        self.distance_node_edit.setValidator(QIntValidator())
+        self.distance_node_edit.setValidator(QDoubleValidator())
 
         # Delay Time
         self.gap_time_label = QLabel("Khoảng thời gian giữa 2 lần ")
@@ -109,14 +109,14 @@ class ControlPanel(QWidget):
         self.total_node_label.setStyleSheet("QLabel{color: white; font-size: 15px;}")
         self.total_node_edit = QLineEdit()
         self.total_node_edit.setPlaceholderText("Nhập số nút")
-        self.total_node_edit.setValidator(QIntValidator())
+        self.total_node_edit.setValidator(QDoubleValidator())
 
         # Distance between 2 nodes in a column
         self.distance_node_column_label = QLabel("Loại lưới (khoảng cách giữa 2 nút dọc) (inch)")
         self.distance_node_column_label.setStyleSheet("QLabel{color: white; font-size: 15px;}")
         self.distance_node_column_edit = QLineEdit()
         self.distance_node_column_edit.setPlaceholderText("Nhập khoảng cách (inch)")
-        self.distance_node_column_edit.setValidator(QIntValidator())
+        self.distance_node_column_edit.setValidator(QDoubleValidator())
     
         # ROI custom
         self.roi_custom_button = QPushButton("Chỉnh vùng ROI")

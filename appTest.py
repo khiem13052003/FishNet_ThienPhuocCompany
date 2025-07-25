@@ -5,7 +5,7 @@ from tkinter import Canvas, Frame, Scrollbar
 from module.deployModel import ImageProcessor
 
 # Khởi tạo instance của ImageProcessor và dictionary chứa các Scale
-processor = ImageProcessor()
+processor = ImageProcessor() 
 scales = dict()
 
 # Danh sách tham số với thông tin: key, label, from, to, init, kiểu và resolution
@@ -14,9 +14,6 @@ params_list = [
     {"key": "ROI_x_end",         "label": "ROI_x_end",          "from": 0,    "to": 1920, "init": processor.extract_roi_size[1],  "type": "int",   "resolution": 1},
     {"key": "ROI_y_start",       "label": "ROI_y_start",        "from": 0,    "to": 1080, "init": processor.extract_roi_size[2],  "type": "int",   "resolution": 1},
     {"key": "ROI_y_end",         "label": "ROI_y_end",          "from": 0,    "to": 1080, "init": processor.extract_roi_size[3],  "type": "int",   "resolution": 1},
-    # {"key": "Distance2Node",     "label": "Distance2Node",      "from": 0.0,  "to": 10.0, "init": processor.distance_cm_cam2net,       "type": "float", "resolution": 0.01},
-    # {"key": "Distance2Node",     "label": "Distance2Node",      "from": 0.0,  "to": 10.0, "init": processor.dis,       "type": "float", "resolution": 0.01},
-    # {"key": "Distance2Node",     "label": "Distance2Node",      "from": 0.0,  "to": 10.0, "init": processor.distance_2node,       "type": "float", "resolution": 0.01},
     {"key": "GKernel",          "label": "GKernel",           "from": 1,    "to": 31,   "init": processor.extract_maskNet_GaussianKernelSize[0], "type": "int", "resolution": 1},
     {"key": "Alpha",             "label": "Alpha",            "from": 0,    "to": 20,   "init": processor.extract_maskNet_addWeighted[0],        "type": "float", "resolution": 0.01},
     {"key": "Beta",              "label": "Beta",             "from": -20,  "to": 0,    "init": processor.extract_maskNet_addWeighted[1],        "type": "float", "resolution": 0.01},
@@ -78,6 +75,8 @@ def video_loop():
         if not ret:
             break
 
+        # frame = cv2.imread(r"D:\DaiHoc\Intern\ThienPhuocCompany\data_fishNet\test\WIN_20250418_10_52_02_Pro.jpg")
+
         # Cập nhật các tham số từ giao diện
         processor.extract_roi_size = (
             get_val("ROI_x_start"),
@@ -85,8 +84,6 @@ def video_loop():
             get_val("ROI_y_start"),
             get_val("ROI_y_end")
         )
-        # processor.distance_2node = get_val("Distance2Node")
-
         # Gaussian kernel: đảm bảo số lẻ
         gk = get_val("GKernel")
         if gk % 2 == 0:

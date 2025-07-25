@@ -28,7 +28,7 @@ def click_event(event, x, y, flags, param):
 
 if __name__ == "__main__":
     # Đọc ảnh từ file; thay "sample.jpg" bằng đường dẫn tới ảnh của bạn
-    img = cv2.imread(r"C:\Users\dinhk\OneDrive\Pictures\Camera Roll\WIN_20250310_11_44_44_Pro.jpg")
+    img = cv2.imread(r"D:\DaiHoc\Intern\ThienPhuocCompany\data_fishNet\test\WIN_20250418_10_52_02_Pro.jpg")
     if img is None:
         print("Không thể đọc ảnh!")
         exit()
